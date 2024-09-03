@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from mdio.seismic.ebcdic import ASCII_TO_EBCDIC
-from mdio.seismic.ebcdic import EBCDIC_TO_ASCII
+from mdio.segy.ebcdic import ASCII_TO_EBCDIC
+from mdio.segy.ebcdic import EBCDIC_TO_ASCII
 
 
 if TYPE_CHECKING:

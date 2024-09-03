@@ -13,10 +13,10 @@ from numpy import unique
 from numpy.testing import assert_array_equal
 
 from mdio.core import Dimension
-from mdio.seismic.exceptions import GridOverrideIncompatibleError
-from mdio.seismic.exceptions import GridOverrideMissingParameterError
-from mdio.seismic.exceptions import GridOverrideUnknownError
-from mdio.seismic.geometry import GridOverrider
+from mdio.segy.exceptions import GridOverrideIncompatibleError
+from mdio.segy.exceptions import GridOverrideMissingParameterError
+from mdio.segy.exceptions import GridOverrideUnknownError
+from mdio.segy.geometry import GridOverrider
 
 
 SHOTS = arange(100, 104, dtype="int32")

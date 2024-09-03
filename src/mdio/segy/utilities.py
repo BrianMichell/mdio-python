@@ -8,9 +8,9 @@ import numpy as np
 from dask.array.core import auto_chunks
 
 from mdio.core.dimension import Dimension
-from mdio.seismic.geometry import GridOverrider
-from mdio.seismic.parsers import parse_sample_axis
-from mdio.seismic.parsers import parse_trace_headers
+from mdio.segy.geometry import GridOverrider
+from mdio.segy.parsers import parse_sample_axis
+from mdio.segy.parsers import parse_trace_headers
 
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from numpy.typing import DTypeLike
     from numpy.typing import NDArray
 
-    from mdio.seismic.byte_utils import Dtype
+    from mdio.segy.byte_utils import Dtype
 
 
 def get_grid_plan(  # noqa: PLR0913

@@ -16,7 +16,7 @@ from mdio import MDIOReader
 from mdio.core import Dimension
 from mdio.core import Grid
 from mdio.core.utils_write import write_attribute
-from mdio.seismic.helpers_segy import create_zarr_hierarchy
+from mdio.segy.helpers_segy import create_zarr_hierarchy
 
 
 if TYPE_CHECKING:

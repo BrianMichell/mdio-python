@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import segyio
 
-from mdio.seismic.geometry import StreamerShotGeometryType
+from mdio.segy.geometry import StreamerShotGeometryType
 
 
 if TYPE_CHECKING:

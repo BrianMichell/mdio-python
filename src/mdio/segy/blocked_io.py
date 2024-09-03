@@ -19,9 +19,9 @@ from zarr import Blosc
 from zarr import Group
 
 from mdio.core.indexing import ChunkIterator
-from mdio.seismic._workers import trace_worker
-from mdio.seismic.creation import concat_files
-from mdio.seismic.creation import write_to_segy_stack
+from mdio.segy._workers import trace_worker
+from mdio.segy.creation import concat_files
+from mdio.segy.creation import write_to_segy_stack
 
 
 if TYPE_CHECKING:
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from mdio.core import Grid
-    from mdio.seismic.byte_utils import ByteOrder
-    from mdio.seismic.byte_utils import Dtype
+    from mdio.segy.byte_utils import ByteOrder
+    from mdio.segy.byte_utils import Dtype
 
 
 try:

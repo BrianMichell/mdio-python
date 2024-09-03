@@ -1,10 +1,10 @@
 """SEG-Y Rev 0 standard and its definitions."""
 
-from mdio.seismic.byte_utils import ByteOrder
-from mdio.seismic.byte_utils import Dtype
-from mdio.seismic.byte_utils import OrderedType
-from mdio.seismic.headers import Header
-from mdio.seismic.headers import HeaderGroup
+from mdio.segy.byte_utils import ByteOrder
+from mdio.segy.byte_utils import Dtype
+from mdio.segy.byte_utils import OrderedType
+from mdio.segy.headers import Header
+from mdio.segy.headers import HeaderGroup
 
 
 # ruff: noqa: E501

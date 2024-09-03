@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 
-from mdio.seismic.exceptions import GridOverrideIncompatibleError
-from mdio.seismic.exceptions import GridOverrideKeysError
-from mdio.seismic.exceptions import GridOverrideMissingParameterError
-from mdio.seismic.exceptions import GridOverrideUnknownError
+from mdio.segy.exceptions import GridOverrideIncompatibleError
+from mdio.segy.exceptions import GridOverrideKeysError
+from mdio.segy.exceptions import GridOverrideMissingParameterError
+from mdio.segy.exceptions import GridOverrideUnknownError
 
 
 if TYPE_CHECKING:
