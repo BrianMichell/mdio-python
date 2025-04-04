@@ -34,7 +34,10 @@ def session_install_uv(
     install_docs: bool = False,
 ) -> None:
     """Install root project into the session's virtual environment using uv."""
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        "UV_PYTHON": sys.executable,  # Override any external UV_PYTHON setting
+    }
 
     args = ["uv", "sync", "--frozen"]
     if not install_project:
