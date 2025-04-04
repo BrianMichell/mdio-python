@@ -34,10 +34,13 @@ def session_install_uv(
     install_docs: bool = False,
 ) -> None:
     """Install root project into the session's virtual environment using uv."""
-    env = {
-        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
-        "UV_PYTHON": sys.executable,  # Override any external UV_PYTHON setting
-    }
+    env = os.environ.copy()
+    env.update(
+        {
+            "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+            "UV_PYTHON": sys.executable,  # Force uv to use the session's interpreter
+        }
+    )
 
     args = ["uv", "sync", "--frozen"]
     if not install_project:
@@ -52,7 +55,13 @@ def session_install_uv(
 
 def session_install_uv_package(session: Session, packages: list[str]) -> None:
     """Install packages into the session's virtual environment using uv lockfile."""
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = os.environ.copy()
+    env.update(
+        {
+            "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+            "UV_PYTHON": sys.executable,
+        }
+    )
 
     # Export requirements.txt to session temp dir using uv with locked dependencies
     requirements_tmp = str(Path(session.create_tmp()) / "requirements.txt")
