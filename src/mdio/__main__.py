@@ -27,10 +27,9 @@ class MyCLI(click.MultiCommand):
     must have a variable named `cli` for the command to be exposed.
 
     Args:
-        plugin_folder: Path to the directory containing command modules.
-        *args: Any positional arguments.
-        **kwargs: Any keyword arguments.
-
+        - `plugin_folder`: Path to the directory containing command modules.
+        - `*args`: Any positional arguments.
+        - `**kwargs`: Any keyword arguments.
     """
 
     def __init__(self, plugin_folder: Path, *args, **kwargs):
