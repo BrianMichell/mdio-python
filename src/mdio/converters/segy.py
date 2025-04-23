@@ -430,7 +430,7 @@ def segy_to_mdio(  # noqa: C901
         else:
             msg = (
                 f"Default chunking for {dim_count}-D seismic data is "
-                "not implemented yet. Please explicity define chunk sizes."
+                "not implemented yet. Please explicitly define chunk sizes."
             )
             raise NotImplementedError(msg)
 
