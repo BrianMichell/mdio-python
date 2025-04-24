@@ -44,11 +44,11 @@ def make_segy_factory(
 
 
 def mdio_spec_to_segy(  # noqa: PLR0913 DOC107
-    mdio_path_or_buffer: str | Path,
-    output_segy_path: str | Path,
+    mdio_path_or_buffer: str,
+    output_segy_path: str,
     access_pattern: str,
     output_endian: Endianness,
-    storage_options: dict[str, Any],
+    storage_options: dict[str],
     new_chunks: tuple[int, ...],
     backend: str,
 ) -> tuple[MDIOReader, SegyFactory]:
