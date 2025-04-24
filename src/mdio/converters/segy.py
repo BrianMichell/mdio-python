@@ -211,7 +211,6 @@ def segy_to_mdio(  # noqa: C901
 
         >>> from mdio import segy_to_mdio
         >>>
-        >>>
         >>> segy_to_mdio(
         ...     segy_path="prefix1/file.segy",
         ...     mdio_path_or_buffer="prefix2/file.mdio",
@@ -287,8 +286,8 @@ def segy_to_mdio(  # noqa: C901
 
         In cases where the user does not know if the input has unwrapped
         channels but desires to store with wrapped channel index use:
-        >>>    grid_overrides={"AutoChannelWrap": True,
-                               "AutoChannelTraceQC":  1000000}
+        >>> grid_overrides={"AutoChannelWrap": True,
+        ...                "AutoChannelTraceQC":  1000000}
 
         For ingestion of pre-stack streamer data where the user needs to
         access/index *common-channel gathers* (single gun) then the following
