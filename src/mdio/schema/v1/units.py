@@ -13,7 +13,7 @@ from mdio.schema.units import create_unit_model
 
 
 ureg = UnitRegistry()
-ureg.default_format = "~C"  # compact, abbreviated (symbol).
+ureg.formatter.default_format = "~C"  # compact, abbreviated (symbol).
 
 
 class LengthUnitEnum(UnitEnum):
