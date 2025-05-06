@@ -18,11 +18,11 @@ from mdio.schema.metadata import UserAttributes
 from mdio.schema.v1.dataset import Dataset
 
 # from mdio.schema.v1.dataset import DatasetMetadata
-from mdio.schema.v1.template_factory import make_coordinate
-from mdio.schema.v1.template_factory import make_dataset
-from mdio.schema.v1.template_factory import make_dataset_metadata
-from mdio.schema.v1.template_factory import make_named_dimension
-from mdio.schema.v1.template_factory import make_variable
+from .factory import make_coordinate
+from .factory import make_dataset
+from .factory import make_dataset_metadata
+from .factory import make_named_dimension
+from .factory import make_variable
 from mdio.schema.v1.units import AllUnits
 from mdio.schema.v1.variable import Coordinate
 from mdio.schema.v1.variable import Variable
@@ -41,7 +41,7 @@ class _BuilderState(Enum):
     HAS_VARIABLES = auto()
 
 
-class TemplateBuilder:
+class Builder:
     """Builder for creating MDIO datasets with enforced build order.
 
     The build order is:
@@ -75,7 +75,7 @@ class TemplateBuilder:
         long_name: str = None,
         data_type: ScalarType | StructuredType = ScalarType.INT32,
         metadata: Optional[List[AllUnits | UserAttributes]] | Dict[str, Any] = None,
-    ) -> "TemplateBuilder":
+    ) -> "Builder":
         """Add a dimension.
 
         This must be called at least once before adding coordinates or variables.
@@ -115,7 +115,7 @@ class TemplateBuilder:
         dimensions: Optional[List[NamedDimension | str]] = None,
         data_type: ScalarType | StructuredType = ScalarType.FLOAT32,
         metadata: Optional[List[AllUnits | UserAttributes]] | Dict[str, Any] = None,
-    ) -> "TemplateBuilder":
+    ) -> "Builder":
         """Add a coordinate after adding at least one dimension."""
         if self._state == _BuilderState.INITIAL:
             raise ValueError(
@@ -162,7 +162,7 @@ class TemplateBuilder:
         compressor: Blosc | ZFP | None = None,
         coordinates: Optional[List[Coordinate | str]] = None,
         metadata: Optional[VariableMetadata] = None,
-    ) -> "TemplateBuilder":
+    ) -> "Builder":
         """Add a variable after adding at least one dimension."""
         if self._state == _BuilderState.INITIAL:
             raise ValueError("Must add at least one dimension before adding variables")
@@ -221,4 +221,4 @@ class TemplateBuilder:
             )
             all_variables.append(coord_var)
 
-        return make_dataset(all_variables, metadata)
+        return make_dataset(all_variables, metadata) 
