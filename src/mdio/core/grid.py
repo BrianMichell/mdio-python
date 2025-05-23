@@ -145,8 +145,8 @@ class Grid:
 
             # Assign trace indices
             trace_indices = np.arange(start, end, dtype=np.uint64)
-            self.map.vindex[live_dim_indices] = trace_indices
-            self.live_mask.vindex[live_dim_indices] = True
+            self.map.oindex[live_dim_indices] = trace_indices
+            self.live_mask.oindex[live_dim_indices] = True
 
 
 class GridSerializer(Serializer):
