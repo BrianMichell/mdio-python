@@ -134,24 +134,24 @@ class Grid:
         # Process headers in batches
         for start in range(0, total_live_traces, batch_size):
             end = min(start + batch_size, total_live_traces)
-            live_dim_indices = []
 
-            # Compute indices for the batch
-            for dim in self.dims[:-1]:
-                dim_hdr = index_headers[dim.name][start:end]
-                indices = np.searchsorted(dim, dim_hdr).astype(np.uint32)
-                live_dim_indices.append(indices)
-            live_dim_indices = tuple(live_dim_indices)
+            # 1) build your per-dimension index arrays
+            live_dim_indices = [
+                np.searchsorted(dim, index_headers[dim.name][start:end])
+                .astype(np.uint32)
+                for dim in self.dims[:-1]
+            ]
 
-            # Assign trace indices
-            trace_indices = np.arange(start, end, dtype=np.uint64)
-            # Compute flat indices for lower-memory scatter assignment
-            flat_indices = np.ravel_multi_index(live_dim_indices, live_shape)
-            flat_map = self.map.reshape(-1)
+            # 2) flatten to 1D indices
+            flat_idx = np.ravel_multi_index(tuple(live_dim_indices), dims=self.map.shape)
+
+            # 3) write into flattened views
+            flat_map  = self.map.reshape(-1)
             flat_mask = self.live_mask.reshape(-1)
-            # Use 1-D fancy indexing (no broadcast) for assignment
-            flat_map.vindex[flat_indices] = trace_indices
-            flat_mask.vindex[flat_indices] = True
+            trace_indices = np.arange(start, end, dtype=flat_map.dtype)
+
+            flat_map[flat_idx]  = trace_indices
+            flat_mask[flat_idx] = True
 
 
 class GridSerializer(Serializer):
