@@ -145,8 +145,13 @@ class Grid:
 
             # Assign trace indices
             trace_indices = np.arange(start, end, dtype=np.uint64)
-            self.map.oindex[live_dim_indices] = trace_indices
-            self.live_mask.oindex[live_dim_indices] = True
+            # Compute flat indices for lower-memory scatter assignment
+            flat_indices = np.ravel_multi_index(live_dim_indices, live_shape)
+            flat_map = self.map.reshape(-1)
+            flat_mask = self.live_mask.reshape(-1)
+            # Use 1-D fancy indexing (no broadcast) for assignment
+            flat_map.vindex[flat_indices] = trace_indices
+            flat_mask.vindex[flat_indices] = True
 
 
 class GridSerializer(Serializer):
