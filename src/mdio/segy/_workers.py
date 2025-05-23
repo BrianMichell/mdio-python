@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 
     from mdio.core import Grid
 
+import os
+import cProfile
+import pstats
+
 
 def header_scan_worker(segy_file: SegyFile, trace_range: tuple[int, int]) -> HeaderArray:
     """Header scan worker.
@@ -77,45 +81,57 @@ def trace_worker(
     Returns:
         Partial statistics for chunk, or None
     """
-    # Special case where there are no traces inside chunk.
-    live_subset = grid.live_mask[chunk_indices[:-1]]
 
-    if np.count_nonzero(live_subset) == 0:
-        return None
+    profiler = cProfile.Profile()
+    profiler.enable()
+    try:
 
-    # Let's get trace numbers from grid map using the chunk indices.
-    seq_trace_indices = grid.map[chunk_indices[:-1]]
+        # Special case where there are no traces inside chunk.
+        live_subset = grid.live_mask[chunk_indices[:-1]]
 
-    tmp_data = np.zeros(seq_trace_indices.shape + (grid.shape[-1],), dtype=data_array.dtype)
-    tmp_metadata = np.zeros(seq_trace_indices.shape, dtype=metadata_array.dtype)
+        if np.count_nonzero(live_subset) == 0:
+            return None
 
-    del grid  # To save some memory
+        # Let's get trace numbers from grid map using the chunk indices.
+        seq_trace_indices = grid.map[chunk_indices[:-1]]
 
-    # Read headers and traces for block
-    valid_indices = seq_trace_indices[live_subset]
+        tmp_data = np.zeros(seq_trace_indices.shape + (grid.shape[-1],), dtype=data_array.dtype)
+        tmp_metadata = np.zeros(seq_trace_indices.shape, dtype=metadata_array.dtype)
 
-    traces = segy_file.trace[valid_indices.tolist()]
-    headers, samples = traces["header"], traces["data"]
+        del grid  # To save some memory
 
-    tmp_metadata[live_subset] = headers.view(tmp_metadata.dtype)
-    tmp_data[live_subset] = samples
+        # Read headers and traces for block
+        valid_indices = seq_trace_indices[live_subset]
 
-    # Flush metadata to zarr
-    metadata_array.set_basic_selection(selection=chunk_indices[:-1], value=tmp_metadata)
+        traces = segy_file.trace[valid_indices.tolist()]
+        headers, samples = traces["header"], traces["data"]
 
-    nonzero_mask = samples != 0
-    nonzero_count = nonzero_mask.sum(dtype="uint32")
+        tmp_metadata[live_subset] = headers.view(tmp_metadata.dtype)
+        tmp_data[live_subset] = samples
 
-    if nonzero_count == 0:
-        return None
+        # Flush metadata to zarr
+        metadata_array.set_basic_selection(selection=chunk_indices[:-1], value=tmp_metadata)
 
-    data_array.set_basic_selection(selection=chunk_indices, value=tmp_data)
+        nonzero_mask = samples != 0
+        nonzero_count = nonzero_mask.sum(dtype="uint32")
 
-    # Calculate statistics
-    tmp_data = samples[nonzero_mask]
-    chunk_sum = tmp_data.sum(dtype="float64")
-    chunk_sum_squares = np.square(tmp_data, dtype="float64").sum()
-    min_val = tmp_data.min()
-    max_val = tmp_data.max()
+        if nonzero_count == 0:
+            return None
 
-    return nonzero_count, chunk_sum, chunk_sum_squares, min_val, max_val
+        data_array.set_basic_selection(selection=chunk_indices, value=tmp_data)
+
+        # Calculate statistics
+        tmp_data = samples[nonzero_mask]
+        chunk_sum = tmp_data.sum(dtype="float64")
+        chunk_sum_squares = np.square(tmp_data, dtype="float64").sum()
+        min_val = tmp_data.min()
+        max_val = tmp_data.max()
+
+        return nonzero_count, chunk_sum, chunk_sum_squares, min_val, max_val
+    finally:
+        profiler.disable()
+        pid = os.getpid()
+        profile_path = f"/tmp/trace_worker_profile_{pid}.prof"
+        with open(profile_path, "w") as f:
+            ps = pstats.Stats(profiler, stream=f)
+            ps.strip_dirs().sort_stats("cumulative").print_stats()
