@@ -54,9 +54,10 @@ def header_scan_worker(segy_file: SegyFile, trace_range: tuple[int, int]) -> Hea
 def trace_worker(
     segy_file: SegyFile,
     data_array: Array,
-    metadata_array: Array,
+    # metadata_array: Array,
     grid: Grid,
     chunk_indices: tuple[slice, ...],
+    mdio_path_or_buffer: str,
 ) -> tuple[Any, ...] | None:
     """Worker function for multi-process enabled blocked SEG-Y I/O.
 
@@ -89,8 +90,8 @@ def trace_worker(
     # Build a temporary buffer for data and metadata for this chunk
     chunk_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1]) + (grid.shape[-1],)
     tmp_data = np.zeros(chunk_shape, dtype=data_array.dtype)
-    meta_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1])
-    tmp_metadata = np.zeros(meta_shape, dtype=metadata_array.dtype)
+    # meta_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1])
+    # tmp_metadata = np.zeros(meta_shape, dtype=metadata_array.dtype)
 
     # Compute local coordinates within the chunk for each trace
     local_coords: list[np.ndarray] = []
@@ -109,10 +110,10 @@ def trace_worker(
 
     # Populate the temporary buffers
     tmp_data[full_idx] = samples
-    tmp_metadata[tuple(local_coords)] = headers.view(tmp_metadata.dtype)
+    # tmp_metadata[tuple(local_coords)] = headers.view(tmp_metadata.dtype)
 
     # Flush metadata to Zarr
-    metadata_array.set_basic_selection(selection=chunk_indices[:-1], value=tmp_metadata)
+    # metadata_array.set_basic_selection(selection=chunk_indices[:-1], value=tmp_metadata)
 
     # Determine nonzero samples and early-exit if none
     nonzero_mask = samples != 0
@@ -121,7 +122,15 @@ def trace_worker(
         return None
 
     # Flush data to Zarr
-    data_array.set_basic_selection(selection=chunk_indices, value=tmp_data)
+    # data_array.set_basic_selection(selection=chunk_indices, value=tmp_data)
+
+    print(f"Writing data to the underlying array...")
+    print(f"Chunk indices: {chunk_indices}")
+    print(f"tmp_data shape: {tmp_data.shape}")
+
+    data_array.loc[chunk_indices] = tmp_data
+    data_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
+
 
     # Calculate statistics
     flattened_nonzero = samples[nonzero_mask]

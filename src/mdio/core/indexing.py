@@ -6,6 +6,8 @@ from math import ceil
 import numpy as np
 from zarr import Array
 
+import xarray as xr
+
 
 class ChunkIterator:
     """Iterator for traversing a Zarr array in chunks.
@@ -36,9 +38,21 @@ class ChunkIterator:
         ...
     """
 
-    def __init__(self, array: Array, chunk_samples: bool = True):
-        self.arr_shape = array.shape
-        self.len_chunks = array.chunks
+    def __init__(self, array: Array | xr.DataArray, chunk_samples: bool = True):
+
+        if isinstance(array, xr.DataArray):
+            self.arr_shape = array.shape
+            self.len_chunks = array.encoding.get("chunks", self.arr_shape)  # TODO: Chunks don't appear to be present in the encoding. array.chunks is related to dask chunks.
+
+            print(f"arr_shape: {self.arr_shape}")
+            print(f"len_chunks: {self.len_chunks}")
+
+            print(f"array.encoding: {array.encoding}")
+            print(f"array.chunksizes: {array.chunksizes}")
+
+        else:
+            self.arr_shape = array.shape
+            self.len_chunks = array.chunks
 
         # If chunk_samples is False, set the last dimension's chunk size to its full extent
         if not chunk_samples:

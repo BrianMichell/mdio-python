@@ -26,6 +26,9 @@ from mdio.segy import blocked_io
 from mdio.segy.compat import mdio_segy_spec
 from mdio.segy.utilities import get_grid_plan
 
+from mdio.core.v1.builder import MDIODatasetBuilder as MDIOBuilder
+from mdio.core.utils_write import get_live_mask_chunksize as live_chunks
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
@@ -384,6 +387,11 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     mdio_spec_grid = mdio_spec.customize(trace_header_fields=index_fields)
     segy_grid = SegyFile(url=segy_path, spec=mdio_spec_grid, settings=segy_settings)
 
+    # print(mdio_spec_grid)
+    # print(index_bytes)
+    # print(index_names)
+    # print(index_types)
+
     dimensions, chunksize, index_headers = get_grid_plan(
         segy_file=segy_grid,
         return_headers=True,
@@ -393,6 +401,71 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     grid = Grid(dims=dimensions)
     grid_density_qc(grid, num_traces)
     grid.build_map(index_headers)
+
+    print(f"Dimensions: {dimensions}")
+    print(f"Chunksize: {chunksize}")
+    print(f"Index headers: {index_headers}")
+
+    builder = MDIOBuilder(name=mdio_path_or_buffer, attributes={"Description": "PH"})
+
+    for dim in dimensions:
+        builder.add_dimension(dim.name, dim.size, data_type=str(dim.coords.dtype))
+
+    # TODO: This name is bad
+    if chunksize is not None:
+        lc = list(chunksize)[:-1]
+    else:
+        lc = list(grid.shape[:-1])
+
+    builder.add_variable(
+        name="live_mask",
+        data_type="bool",
+        coordinates=["live_mask"],
+        dimensions=[dim.name for dim in dimensions[:-1]],
+        metadata={
+            "chunkGrid": {
+                "name": "regular",
+                "configuration": {
+                    "chunkShape": live_chunks(lc)
+                }
+            }
+        }
+    )
+
+    print(f"Chunksize: {chunksize}")
+
+    if chunksize is not None:
+        metadata = {
+            "chunkGrid": {
+                "name": "regular",
+                "configuration": {
+                    "chunkShape": list(chunksize),
+                }
+            }
+        }
+    else:
+        metadata = None
+
+    builder.add_variable(
+        name="seismic",
+        data_type="float32",
+        coordinates=["live_mask"],
+        metadata=metadata,
+    )
+
+    ds = builder.to_mdio(store=mdio_path_or_buffer)
+
+    import json
+    contract=json.loads(builder.build().json())
+    from rich import print as rprint
+    oc = {
+        "metadata": contract["metadata"],
+        "variables": contract["variables"],
+    }
+    rprint(oc)
+    new_coords = {dim.name: dim.coords for dim in dimensions}
+    ds = ds.assign_coords(new_coords)
+    ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
 
     # Check grid validity by ensuring every trace's header-index is within dimension bounds
     valid_mask = np.ones(grid.num_traces, dtype=bool)
@@ -413,57 +486,18 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     del valid_mask
     gc.collect()
 
-    if chunksize is None:
-        dim_count = len(index_names) + 1
-        if dim_count == 2:  # noqa: PLR2004
-            chunksize = (512,) * 2
+    live_mask_array = ds.live_mask
+    # Cast to MDIODataArray to access the to_mdio method
+    from mdio.core.v1._overloads import MDIODataArray
+    live_mask_array.__class__ = MDIODataArray
 
-        elif dim_count == 3:  # noqa: PLR2004
-            chunksize = (64,) * 3
-
-        else:
-            msg = (
-                f"Default chunking for {dim_count}-D seismic data is not implemented yet. "
-                "Please explicity define chunk sizes."
-            )
-            raise NotImplementedError(msg)
-
-        suffix = [str(x) for x in range(dim_count)]
-        suffix = "".join(suffix)
-    else:
-        suffix = [dim_chunks if dim_chunks > 0 else None for dim_chunks in chunksize]
-        suffix = [str(idx) for idx, value in enumerate(suffix) if value is not None]
-        suffix = "".join(suffix)
-
-    compressors = get_compressor(lossless, compression_tolerance)
-    header_dtype = segy.spec.trace.header.dtype.newbyteorder("=")
-    var_conf = MDIOVariableConfig(
-        name=f"chunked_{suffix}",
-        dtype="float32",
-        chunks=chunksize,
-        compressors=compressors,
-        header_dtype=header_dtype,
-    )
-    config = MDIOCreateConfig(path=mdio_path_or_buffer, grid=grid, variables=[var_conf])
-
-    root_group = create_empty(
-        config,
-        overwrite=overwrite,
-        storage_options=storage_options_output,
-        consolidate_meta=False,
-    )
-    data_group = root_group["data"]
-    meta_group = root_group["metadata"]
-    data_array = data_group[f"chunked_{suffix}"]
-    header_array = meta_group[f"chunked_{suffix}_trace_headers"]
-
-    live_mask_array = meta_group["live_mask"]
-    # 'live_mask_array' has the same first N–1 dims as 'grid.shape[:-1]'
     # Build a ChunkIterator over the live_mask (no sample axis)
     from mdio.core.indexing import ChunkIterator
 
-    chunker = ChunkIterator(live_mask_array, chunk_samples=True)
+    # chunker = ChunkIterator(live_mask_array, chunk_samples=True)
+    chunker = ChunkIterator(ds.live_mask, chunk_samples=True)
     for chunk_indices in chunker:
+        print(f"chunk_indices: {chunk_indices}")
         # chunk_indices is a tuple of N–1 slice objects
         trace_ids = grid.get_traces_for_chunk(chunk_indices)
         if trace_ids.size == 0:
@@ -502,7 +536,7 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
         del local_coords
 
         # Write the entire block to Zarr at once
-        live_mask_array.set_basic_selection(selection=chunk_indices, value=block)
+        live_mask_array.loc[chunk_indices] = block
 
         # Free block immediately after writing
         del block
@@ -510,27 +544,34 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
         # Force garbage collection periodically to free memory aggressively
         gc.collect()
 
+    live_mask_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
+
     # Final cleanup
     del live_mask_array
     del chunker
     gc.collect()
 
-    nonzero_count = grid.num_traces
+    # nonzero_count = grid.num_traces
 
-    write_attribute(name="trace_count", zarr_group=root_group, attribute=nonzero_count)
-    write_attribute(name="text_header", zarr_group=meta_group, attribute=text_header.split("\n"))
-    write_attribute(name="binary_header", zarr_group=meta_group, attribute=binary_header.to_dict())
+    # write_attribute(name="trace_count", zarr_group=root_group, attribute=nonzero_count)
+    # write_attribute(name="text_header", zarr_group=meta_group, attribute=text_header.split("\n"))
+    # write_attribute(name="binary_header", zarr_group=meta_group, attribute=binary_header.to_dict())
+
+    da = ds.seismic
+    da.__class__ = MDIODataArray
 
     # Write traces
     stats = blocked_io.to_zarr(
         segy_file=segy,
         grid=grid,
-        data_array=data_array,
-        header_array=header_array,
+        # data_array=ds.seismic,
+        data_array=da,
+        # header_array=header_array,
+        mdio_path_or_buffer=mdio_path_or_buffer,
     )
 
     # Write actual stats
-    for key, value in stats.items():
-        write_attribute(name=key, zarr_group=root_group, attribute=value)
+    # for key, value in stats.items():
+    #     write_attribute(name=key, zarr_group=root_group, attribute=value)
 
-    zarr.consolidate_metadata(root_group.store)
+    # zarr.consolidate_metadata(root_group.store)

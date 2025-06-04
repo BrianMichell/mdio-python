@@ -268,6 +268,14 @@ def write_mdio_metadata(
         """
         # TODO(Anybody, #10274): Re-enable chunk_key_encoding when supported by xarray
         # dimension_separator_encoding = V2ChunkKeyEncoding(separator="/").to_dict()
+        
+        # Collect dimension sizes (same approach as _construct_mdio_dataset)
+        dims: dict[str, int] = {}
+        for var in mdio_ds.variables:
+            for d in var.dimensions:
+                if isinstance(d, NamedDimension):
+                    dims[d.name] = d.size
+        
         global_encodings = {}
         for var in mdio_ds.variables:
             fill_value = 0
@@ -276,6 +284,10 @@ def write_mdio_metadata(
             chunks = None
             if var.metadata is not None and var.metadata.chunk_grid is not None:
                 chunks = var.metadata.chunk_grid.configuration.chunk_shape
+            else:
+                # When no chunk_grid is provided, set chunks to shape to avoid chunking
+                dim_names = [d.name if isinstance(d, NamedDimension) else d for d in var.dimensions]
+                chunks = tuple(dims[name] for name in dim_names)
             global_encodings[var.name] = {
                 "chunks": chunks,
                 # TODO(Anybody, #10274): Re-enable chunk_key_encoding when supported by xarray

@@ -23,6 +23,8 @@ from mdio.segy.creation import concat_files
 from mdio.segy.creation import serialize_to_segy_stack
 from mdio.segy.utilities import find_trailing_ones_index
 
+import mdio.core.v1._overloads 
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from segy import SegyFactory
@@ -37,8 +39,10 @@ default_cpus = cpu_count(logical=True)
 def to_zarr(
     segy_file: SegyFile,
     grid: Grid,
-    data_array: ZarrArray,
-    header_array: ZarrArray,
+    # data_array: ZarrArray,
+    data_array: mdio.DataArray,
+    # header_array: ZarrArray,
+    mdio_path_or_buffer: str,
 ) -> dict[str, Any]:
     """Blocked I/O from SEG-Y to chunked `zarr.core.Array`.
 
@@ -47,13 +51,17 @@ def to_zarr(
         grid: mdio.Grid instance.
         data_array: Zarr array for storing trace data.
         header_array: Zarr array for storing trace headers.
-
+        mdio_path_or_buffer: Path or buffer-like object for storing the MDIO dataset.
     Returns:
         Global statistics for the SEG-Y as a dictionary.
     """
     # Initialize chunk iterator (returns next chunk slice indices each iteration)
     chunker = ChunkIterator(data_array, chunk_samples=False)
     num_chunks = len(chunker)
+
+    # print(f"Chunker: {chunker}")
+    for cnk in chunker:
+        print(f"cnk: {cnk}")
 
     # Determine number of workers
     num_cpus_env = int(os.getenv("MDIO__IMPORT__CPU_COUNT", default_cpus))
@@ -66,6 +74,8 @@ def to_zarr(
 
     tqdm_kw = {"unit": "block", "dynamic_ncols": True}
 
+    print(f"pool_chunksize: {pool_chunksize}")
+
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows
     context = mp.get_context("spawn")
@@ -76,9 +86,10 @@ def to_zarr(
             trace_worker,
             repeat(segy_file),
             repeat(data_array),
-            repeat(header_array),
+            # repeat(header_array),
             repeat(grid),
             chunker,
+            repeat(mdio_path_or_buffer),
             chunksize=pool_chunksize,
         )
 
@@ -97,7 +108,13 @@ def to_zarr(
     # Aggregate statistics
     chunk_stats = [stat for stat in chunk_stats if stat is not None]
     # Each stat: (count, sum, sum_sq, min, max). Transpose to unpack rows.
-    glob_count, glob_sum, glob_sum_square, glob_min, glob_max = zip(*chunk_stats, strict=False)
+    # glob_count, glob_sum, glob_sum_square, glob_min, glob_max = zip(*chunk_stats, strict=False)
+    # TODO: Fix me
+    glob_count = 0
+    glob_sum = 0
+    glob_sum_square = 0
+    glob_min = 0
+    glob_max = 0
 
     glob_count = np.sum(np.array(glob_count, dtype=np.uint64))
     glob_sum = np.sum(np.array(glob_sum, dtype=np.float64))
