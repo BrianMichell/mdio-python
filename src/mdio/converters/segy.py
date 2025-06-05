@@ -575,3 +575,173 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     #     write_attribute(name=key, zarr_group=root_group, attribute=value)
 
     # zarr.consolidate_metadata(root_group.store)
+
+
+def segy_to_mdio_schematized(
+    segy_schema: dict[str, Any],
+    mdio_schema: dict[str, Any], 
+    mdio_path_or_buffer: str | Path,
+    storage_options_input: dict[str, Any] | None = None,
+    storage_options_output: dict[str, Any] | None = None,
+) -> None:
+    """Create MDIO dataset from a schema specification using Pydantic v1 models.
+    
+    Args:
+        segy_schema: Dictionary containing SEG-Y related schema (currently unused)
+        mdio_schema: Dictionary containing the MDIO schema specification
+        mdio_path_or_buffer: Output path for the MDIO file
+    """
+
+    grid_overrides = None  # TODO: Implement this maybe?
+
+    from mdio.core.v1.factory import from_contract
+    from mdio.core.v1._overloads import MDIO
+    serialized_mdio = from_contract(mdio_path_or_buffer, mdio_schema)
+
+    ds = MDIO.open(mdio_path_or_buffer)  # Reopen because we needed to do some weird stuff (hacky)
+
+    index_names = segy_schema["index_names"]
+    index_types = segy_schema["index_types"]
+    index_bytes = segy_schema["index_bytes"]
+
+    chunksize = None
+    live_mask_valid = False
+    for variable in mdio_schema["variables"]:
+        if variable["name"] == "seismic":
+            chunksize = variable["metadata"]["chunkGrid"]["configuration"]["chunkShape"]
+        elif variable["name"] == "live_mask":
+            live_mask_valid = True
+
+    if chunksize is None:
+        raise ValueError("Couldn't determine the primary seismic Variable in the MDIO schema!")
+
+    if not live_mask_valid:
+        raise ValueError("Couldn't find the live_mask Variable in the MDIO schema!")
+
+    storage_options_input = storage_options_input or {}
+    storage_options_output = storage_options_output or {}
+    
+    mdio_spec = mdio_segy_spec() # TODO: I think this may need to be updated to work with our new input schemas
+    segy_settings = SegySettings(storage_options=storage_options_input)
+    # segy = SegyFile(url=segy_path, spec=mdio_spec, settings=segy_settings)
+    segy = SegyFile(url=segy_schema["path"], spec=mdio_spec, settings=segy_settings)
+
+    text_header = segy.text_header
+    binary_header = segy.binary_header
+    num_traces = segy.num_traces
+    
+    # Index the dataset using a spec that interprets the user provided index headers.
+    index_fields = []
+    for name, byte, format_ in zip(index_names, index_bytes, index_types, strict=True):
+        index_fields.append(HeaderField(name=name, byte=byte, format=format_))
+    mdio_spec_grid = mdio_spec.customize(trace_header_fields=index_fields)
+    segy_grid = SegyFile(url=segy_schema["path"], spec=mdio_spec_grid, settings=segy_settings)
+
+    dimensions, chunksize, index_headers = get_grid_plan(
+        segy_file=segy_grid,
+        return_headers=True,
+        chunksize=chunksize,
+        grid_overrides=grid_overrides,
+    )
+    grid = Grid(dims=dimensions)
+    grid_density_qc(grid, num_traces)
+    grid.build_map(index_headers)
+
+    # Set dimension coordinates
+    new_coords = {dim.name: dim.coords for dim in dimensions}
+    ds = ds.assign_coords(new_coords)
+    ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
+
+    # Set all coordinates which are not dimensions, root Variables, or live_mask
+
+
+    # Check grid validity by ensuring every trace's header-index is within dimension bounds
+    valid_mask = np.ones(grid.num_traces, dtype=bool)
+    for d_idx in range(len(grid.header_index_arrays)):
+        coords = grid.header_index_arrays[d_idx]
+        valid_mask &= coords < grid.shape[d_idx]
+    valid_count = int(np.count_nonzero(valid_mask))
+    if valid_count != num_traces:
+        for dim_name in grid.dim_names:
+            dim_min = grid.get_min(dim_name)
+            dim_max = grid.get_max(dim_name)
+            logger.warning("%s min: %s max: %s", dim_name, dim_min, dim_max)
+        logger.warning("Ingestion grid shape: %s.", grid.shape)
+        raise GridTraceCountError(valid_count, num_traces)
+
+    import gc
+
+    del valid_mask
+    gc.collect()
+
+    live_mask_array = ds.live_mask  # TODO: Make this more robust
+    from mdio.core.v1._overloads import MDIODataArray
+    live_mask_array.__class__ = MDIODataArray
+
+    from mdio.core.indexing import ChunkIterator
+
+    chunker = ChunkIterator(live_mask_array, chunk_samples=True)
+    for chunk_indices in chunker:
+        print(f"chunk_indices: {chunk_indices}")
+        # chunk_indices is a tuple of N–1 slice objects
+        trace_ids = grid.get_traces_for_chunk(chunk_indices)
+        if trace_ids.size == 0:
+            # Free memory immediately for empty chunks
+            del trace_ids
+            continue
+
+        # Build a temporary boolean block of shape = chunk shape
+        block = np.zeros(tuple(sl.stop - sl.start for sl in chunk_indices), dtype=bool)
+
+        # Compute local coords within this block for each trace_id
+        local_coords: list[np.ndarray] = []
+        for dim_idx, sl in enumerate(chunk_indices):
+            hdr_arr = grid.header_index_arrays[dim_idx]
+            # Optimize memory usage: hdr_arr and trace_ids are already uint32,
+            # sl.start is int, so result should naturally be int32/uint32.
+            indexed_coords = hdr_arr[trace_ids]  # uint32 array
+            local_idx = indexed_coords - sl.start  # remains uint32
+            # Free indexed_coords immediately
+            del indexed_coords
+
+            # Only convert dtype if necessary for indexing (numpy requires int for indexing)
+            if local_idx.dtype != np.intp:
+                local_idx = local_idx.astype(np.intp)
+            local_coords.append(local_idx)
+            # local_idx is now owned by local_coords list, safe to continue
+
+        # Free trace_ids as soon as we're done with it
+        del trace_ids
+
+        # Mark live cells in the temporary block
+        block[tuple(local_coords)] = True
+
+        # Free local_coords immediately after use
+        del local_coords
+
+        # Write the entire block to Zarr at once
+        # live_mask_array.loc[chunk_indices] = block
+        live_mask_array.isel(isel_dict).values[:] = block
+
+        # Free block immediately after writing
+        del block
+
+        # Force garbage collection periodically to free memory aggressively
+        gc.collect()
+
+    live_mask_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
+
+    # Final cleanup
+    del live_mask_array
+    del chunker
+    gc.collect()
+
+    da = ds.seismic  # TODO: Yolo the seismic Variable
+    da.__class__ = MDIODataArray
+
+    stats = blocked_io.to_zarr(
+        segy_file=segy,
+        grid=grid,
+        data_array=da,
+        mdio_path_or_buffer=mdio_path_or_buffer,
+    )

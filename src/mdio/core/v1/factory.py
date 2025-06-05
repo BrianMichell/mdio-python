@@ -42,13 +42,13 @@ def from_contract(store: str, contract: str | dict) -> Dataset:
         contract = json.loads(contract)
 
     try:
-        V1Dataset.model_validate(contract)
+        validated_contract = V1Dataset.model_validate(contract)
     except ValidationError as e:
         msg = f"Failed to validate the input contract: {e}"
         raise ValueError(msg) from e
 
-    ds = _construct_mdio_dataset(contract)
-    return ds.to_mdio(store)
+    ds = _construct_mdio_dataset(validated_contract)
+    return ds.to_mdio(store, compute=False, mode="w")  # TODO: Define whether we should overwrite or error
 
 
 class MDIOSchemaType(Enum):

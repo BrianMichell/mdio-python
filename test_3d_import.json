@@ -1,0 +1,42 @@
+{
+    "metadata": {
+        "name": "test_3d_import",
+        "apiVersion": "1.0.0",
+        "createdOn": "2025-06-05T19:50:30.061476+00:00"
+    },
+    "variables": [
+        {
+            "name": "live_mask",
+            "dataType": "bool",
+            "dimensions": ["inline", "crossline"]
+        },
+        {
+            "name": "seismic",
+            "dataType": "float32",
+            "dimensions": ["inline", "crossline", "sample"],
+            "metadata": {
+                "chunkGrid": {
+                    "configuration": {
+                        "chunkShape": [345, 188, 1501]
+                    }
+                }
+            },
+            "coordinates": ["inline", "crossline", "sample"]
+        },
+        {
+            "name": "inline",
+            "dataType": "int32",
+            "dimensions": [{"name": "inline", "size": 345}]
+        },
+        {
+            "name": "crossline",
+            "dataType": "int32",
+            "dimensions": [{"name": "crossline", "size": 188}]
+        },
+        {
+            "name": "sample",
+            "dataType": "int32",
+            "dimensions": [{"name": "sample", "size": 1501}]
+        }
+    ]
+}

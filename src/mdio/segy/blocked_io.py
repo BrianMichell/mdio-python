@@ -63,6 +63,8 @@ def to_zarr(
     for cnk in chunker:
         print(f"cnk: {cnk}")
 
+    chunker = ChunkIterator(data_array, chunk_samples=False)  # rebuild since debug print
+
     # Determine number of workers
     num_cpus_env = int(os.getenv("MDIO__IMPORT__CPU_COUNT", default_cpus))
     num_workers = min(num_chunks, num_cpus_env)

@@ -53,7 +53,8 @@ def header_scan_worker(segy_file: SegyFile, trace_range: tuple[int, int]) -> Hea
 
 def trace_worker(
     segy_file: SegyFile,
-    data_array: Array,
+    # data_array: Array,
+    data_array: mdio.DataArray,
     # metadata_array: Array,
     grid: Grid,
     chunk_indices: tuple[slice, ...],
@@ -89,6 +90,9 @@ def trace_worker(
 
     # Build a temporary buffer for data and metadata for this chunk
     chunk_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1]) + (grid.shape[-1],)
+
+    print(f"Chunk shape from trace_worker: {chunk_shape}")
+
     tmp_data = np.zeros(chunk_shape, dtype=data_array.dtype)
     # meta_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1])
     # tmp_metadata = np.zeros(meta_shape, dtype=metadata_array.dtype)
@@ -127,10 +131,11 @@ def trace_worker(
     print(f"Writing data to the underlying array...")
     print(f"Chunk indices: {chunk_indices}")
     print(f"tmp_data shape: {tmp_data.shape}")
+    print(f"data_array shape: {data_array.shape}")
 
-    data_array.loc[chunk_indices] = tmp_data
+    # Direct assignment to underlying data array
+    data_array.data[chunk_indices] = tmp_data
     data_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
-
 
     # Calculate statistics
     flattened_nonzero = samples[nonzero_mask]

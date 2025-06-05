@@ -1,0 +1,6 @@
+{
+    "path": "",
+    "index_names": ["inline", "crossline"],
+    "index_bytes": [17, 13],
+    "index_types": ["int32", "int32"]
+}

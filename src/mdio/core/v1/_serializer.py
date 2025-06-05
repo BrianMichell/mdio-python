@@ -26,6 +26,8 @@ from mdio.schemas.v1.variable import Coordinate
 from mdio.schemas.v1.variable import Variable
 from mdio.schemas.v1.variable import VariableMetadata
 
+import dask.array as da
+
 try:
     import zfpy as zfpy_base  # Base library
     from numcodecs import ZFPY  # Codec
@@ -251,7 +253,17 @@ def _construct_mdio_dataset(mdio_ds: MDIODataset) -> mdio.Dataset:  # noqa: PLR0
         else:
             msg = f"Unsupported data_type: {dt}"
             raise TypeError(msg)
-        arr = np.zeros(shape, dtype=dtype)
+        
+        # Determine chunk sizes based on chunk_grid availability
+        chunks = None
+        if var.metadata is not None and var.metadata.chunk_grid is not None:
+            chunks = var.metadata.chunk_grid.configuration.chunk_shape
+        else:
+            # When no chunk_grid is provided, set chunks to shape to avoid chunking
+            chunks = shape
+        
+        # Use dask array instead of numpy array for lazy evaluation
+        arr = da.zeros(shape, dtype=dtype, chunks=chunks)
         data_array = mdio.DataArray(arr, dims=dim_names)
         data_array.encoding["fill_value"] = 0.0
 

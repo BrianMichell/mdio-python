@@ -271,6 +271,27 @@ def test_3d_import(
         index_names=index_names,
         overwrite=True,
     )
+    import json
+
+    with open("test_3d_import_segy.json", "r") as f:
+        segy_schema = json.load(f)
+    segy_schema["path"] = segy_input.__str__()
+    with open("test_3d_import.json", "r") as f:
+        mdio_schema = json.load(f)
+
+    from mdio.converters.segy import segy_to_mdio_schematized
+
+    segy_to_mdio_schematized(
+        segy_schema=segy_schema,
+        mdio_schema=mdio_schema,
+        mdio_path_or_buffer="test_3d.mdio",
+    )
+
+    # segy_to_mdio_schematized(
+    #     segy_schema=segy_input.__str__(),
+    #     mdio_schema="test_3d.mdio",
+    #     mdio_path_or_buffer=zarr_tmp.__str__(),
+    # )
 
 
 # @pytest.mark.dependency("test_3d_import")
