@@ -284,6 +284,10 @@ def write_mdio_metadata(
             chunks = None
             if var.metadata is not None and var.metadata.chunk_grid is not None:
                 chunks = var.metadata.chunk_grid.configuration.chunk_shape
+                if isinstance(chunks[0], list):
+                    chunks = tuple(tuple(c) for c in chunks)
+                else:
+                    chunks = tuple(chunks)
             else:
                 # When no chunk_grid is provided, set chunks to shape to avoid chunking
                 dim_names = [d.name if isinstance(d, NamedDimension) else d for d in var.dimensions]
@@ -298,6 +302,7 @@ def write_mdio_metadata(
             }
         return global_encodings
 
+    global_encodings = _generate_encodings()
     ds.to_mdio(
         store,
         mode=mode,
@@ -305,7 +310,11 @@ def write_mdio_metadata(
         consolidated=True,
         safe_chunks=False,
         compute=compute,
-        encoding=_generate_encodings(),
+        encoding=global_encodings,
         **kwargs,
     )
+
+    for var_name, encoding in global_encodings.items():
+        ds[var_name].encoding.update(encoding)
+
     return ds
