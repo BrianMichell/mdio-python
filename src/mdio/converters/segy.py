@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 import numpy as np
-import zarr
 from numcodecs import Blosc
 from segy import SegyFile
 from segy.config import SegySettings
@@ -18,16 +17,11 @@ from mdio.converters.exceptions import EnvironmentFormatError
 from mdio.converters.exceptions import GridTraceCountError
 from mdio.converters.exceptions import GridTraceSparsityError
 from mdio.core import Grid
-from mdio.core.factory import MDIOCreateConfig
-from mdio.core.factory import MDIOVariableConfig
-from mdio.core.factory import create_empty
-from mdio.core.utils_write import write_attribute
+from mdio.core.utils_write import get_live_mask_chunksize as live_chunks
+from mdio.core.v1.builder import MDIODatasetBuilder as MDIOBuilder
 from mdio.segy import blocked_io
 from mdio.segy.compat import mdio_segy_spec
 from mdio.segy.utilities import get_grid_plan
-
-from mdio.core.v1.builder import MDIODatasetBuilder as MDIOBuilder
-from mdio.core.utils_write import get_live_mask_chunksize as live_chunks
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -423,16 +417,11 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
         coordinates=["live_mask"],
         dimensions=[dim.name for dim in dimensions[:-1]],
         metadata={
-            "chunkGrid": {
-                "name": "regular",
-                "configuration": {
-                    "chunkShape": live_chunks(lc)
-                }
-            }
-        }
+            "chunkGrid": {"name": "regular", "configuration": {"chunkShape": live_chunks(lc)}}
+        },
     )
 
-    print(f"Chunksize: {chunksize}")
+    # print(f"Chunksize: {chunksize}")
 
     if chunksize is not None:
         metadata = {
@@ -440,7 +429,7 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
                 "name": "regular",
                 "configuration": {
                     "chunkShape": list(chunksize),
-                }
+                },
             }
         }
     else:
@@ -456,8 +445,10 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     ds = builder.to_mdio(store=mdio_path_or_buffer)
 
     import json
-    contract=json.loads(builder.build().json())
+
+    contract = json.loads(builder.build().json())
     from rich import print as rprint
+
     oc = {
         "metadata": contract["metadata"],
         "variables": contract["variables"],
@@ -489,6 +480,7 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     live_mask_array = ds.live_mask
     # Cast to MDIODataArray to access the to_mdio method
     from mdio.core.v1._overloads import MDIODataArray
+
     live_mask_array.__class__ = MDIODataArray
 
     # Build a ChunkIterator over the live_mask (no sample axis)
@@ -576,40 +568,113 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
 
     # zarr.consolidate_metadata(root_group.store)
 
+def validate_segy_schema(segy_schema: dict[str, Any]) -> None:
+    """Validate the SEG-Y schema.
+    
+    Args:
+        segy_schema: SEG-Y schema
+        
+    Raises:
+        ValueError: If schema is missing required fields or has invalid structure
+    """
+    if "trace" not in segy_schema:
+        raise ValueError("SEG-Y schema must contain 'trace' field")
+        
+    if "header_entries" not in segy_schema["trace"]:
+        raise ValueError("SEG-Y schema trace must contain 'header_entries' field")
+        
+    if not isinstance(segy_schema["trace"]["header_entries"], list):
+        raise ValueError("SEG-Y schema trace header_entries must be a list")
+
+
+def get_dims(ds: MDIO, segy_schema: dict[str, Any]) -> dict[str, Any]:
+    """Get the dimensions of the MDIO dataset from the SEG-Y schema.
+    
+    Args:
+        ds: MDIO dataset
+        segy_schema: SEG-Y schema
+    """
+    target_dims = ds.seismic.dims[:-1]
+
+    try:
+        validate_segy_schema(segy_schema)
+    except ValueError as e:
+        raise ValueError(f"Unable to parse SEG-Y schema: {e}")
+
+    trace_headers = segy_schema["trace"]["header_entries"]
+    ret = {}
+
+    for header in trace_headers:
+        if header["name"] in target_dims:
+            ret[header["name"]] = {
+                "index_name": header["name"],
+                "index_type": header["format"],
+                "index_byte": header["byte_start"],
+            }
+
+    if len(ret) != len(target_dims):
+        raise ValueError(f"Not all dimensions were found in the SEG-Y schema. Missing: {target_dims - ret.keys()}")
+
+    return ret
+
+def get_sample_name(ds: MDIO, grid_dims) -> str:
+    """Get the name of the sample dimension from the dataset.
+    
+    Args:
+        ds: MDIO dataset
+        grid_dims: List of grid dimensions
+        
+    Returns:
+        str: Name of the sample dimension
+    """
+    ds_dims = list(ds.seismic.dims)
+    for dim in grid_dims:
+        try:
+            ds_dims.remove(dim.name)
+        except ValueError:
+            pass
+    return ds_dims[0]  # Should only be one left
+
 
 def segy_to_mdio_schematized(
     segy_schema: dict[str, Any],
-    mdio_schema: dict[str, Any], 
+    mdio_schema: dict[str, Any],
     mdio_path_or_buffer: str | Path,
     storage_options_input: dict[str, Any] | None = None,
     storage_options_output: dict[str, Any] | None = None,
 ) -> None:
     """Create MDIO dataset from a schema specification using Pydantic v1 models.
-    
+
     Args:
         segy_schema: Dictionary containing SEG-Y related schema (currently unused)
         mdio_schema: Dictionary containing the MDIO schema specification
         mdio_path_or_buffer: Output path for the MDIO file
     """
-
     grid_overrides = None  # TODO: Implement this maybe?
 
-    from mdio.core.v1.factory import from_contract
     from mdio.core.v1._overloads import MDIO
+    from mdio.core.v1.factory import from_contract
+
     serialized_mdio = from_contract(mdio_path_or_buffer, mdio_schema)
 
     ds = MDIO.open(mdio_path_or_buffer)  # Reopen because we needed to do some weird stuff (hacky)
 
-    index_names = segy_schema["index_names"]
-    index_types = segy_schema["index_types"]
-    index_bytes = segy_schema["index_bytes"]
+    try:
+        dims = get_dims(ds, segy_schema)
+    except ValueError as e:
+        raise ValueError(f"Unable to parse SEG-Y schema into MDIO schema: {e}")
+
+    index_names = [dims[dim]["index_name"] for dim in dims]
+    index_types = [dims[dim]["index_type"] for dim in dims]
+    index_bytes = [dims[dim]["index_byte"] for dim in dims]
+    
 
     chunksize = None
     live_mask_valid = False
     for variable in mdio_schema["variables"]:
         if variable["name"] == "seismic":
             chunksize = variable["metadata"]["chunkGrid"]["configuration"]["chunkShape"]
-        elif variable["name"] == "live_mask":
+        elif variable["name"] == "live_mask" or variable["name"] == "trace_mask":
             live_mask_valid = True
 
     if chunksize is None:
@@ -620,8 +685,10 @@ def segy_to_mdio_schematized(
 
     storage_options_input = storage_options_input or {}
     storage_options_output = storage_options_output or {}
-    
-    mdio_spec = mdio_segy_spec() # TODO: I think this may need to be updated to work with our new input schemas
+
+    mdio_spec = (
+        mdio_segy_spec()
+    )  # TODO: I think this may need to be updated to work with our new input schemas
     segy_settings = SegySettings(storage_options=storage_options_input)
     # segy = SegyFile(url=segy_path, spec=mdio_spec, settings=segy_settings)
     segy = SegyFile(url=segy_schema["path"], spec=mdio_spec, settings=segy_settings)
@@ -629,7 +696,7 @@ def segy_to_mdio_schematized(
     text_header = segy.text_header
     binary_header = segy.binary_header
     num_traces = segy.num_traces
-    
+
     # Index the dataset using a spec that interprets the user provided index headers.
     index_fields = []
     for name, byte, format_ in zip(index_names, index_bytes, index_types, strict=True):
@@ -643,9 +710,13 @@ def segy_to_mdio_schematized(
         chunksize=chunksize,
         grid_overrides=grid_overrides,
     )
+    dimensions[-1].name = get_sample_name(ds, dimensions)
+    # print(dimensions)
     grid = Grid(dims=dimensions)
     grid_density_qc(grid, num_traces)
     grid.build_map(index_headers)
+
+    # Override the "sample" dimension name
 
     # Set dimension coordinates
     new_coords = {dim.name: dim.coords for dim in dimensions}
@@ -653,7 +724,6 @@ def segy_to_mdio_schematized(
     ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
 
     # Set all coordinates which are not dimensions, root Variables, or live_mask
-
 
     # Check grid validity by ensuring every trace's header-index is within dimension bounds
     valid_mask = np.ones(grid.num_traces, dtype=bool)
@@ -674,15 +744,19 @@ def segy_to_mdio_schematized(
     del valid_mask
     gc.collect()
 
-    live_mask_array = ds.live_mask  # TODO: Make this more robust
+    coords = ds.seismic.coords  #  TODO: We also need to iterate over the coords and assign their values in parallel with the live_mask
+
+    # live_mask_array = ds.live_mask  # TODO: Make this more robust
+    live_mask_array = ds.trace_mask
     from mdio.core.v1._overloads import MDIODataArray
+
     live_mask_array.__class__ = MDIODataArray
 
     from mdio.core.indexing import ChunkIterator
 
     chunker = ChunkIterator(live_mask_array, chunk_samples=True)
     for chunk_indices in chunker:
-        print(f"chunk_indices: {chunk_indices}")
+        # print(f"chunk_indices: {chunk_indices}")
         # chunk_indices is a tuple of N–1 slice objects
         trace_ids = grid.get_traces_for_chunk(chunk_indices)
         if trace_ids.size == 0:
@@ -720,8 +794,8 @@ def segy_to_mdio_schematized(
         del local_coords
 
         # Write the entire block to Zarr at once
-        # live_mask_array.loc[chunk_indices] = block
-        live_mask_array.isel(isel_dict).values[:] = block
+        # live_mask_array.isel(chunk_indices).values[:] = block
+        live_mask_array[chunk_indices] = block
 
         # Free block immediately after writing
         del block
@@ -729,7 +803,8 @@ def segy_to_mdio_schematized(
         # Force garbage collection periodically to free memory aggressively
         gc.collect()
 
-    live_mask_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
+    # Save the entire dataset to persist the live_mask changes
+    ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
 
     # Final cleanup
     del live_mask_array
@@ -739,9 +814,13 @@ def segy_to_mdio_schematized(
     da = ds.seismic  # TODO: Yolo the seismic Variable
     da.__class__ = MDIODataArray
 
+    header_array = ds.headers
+    header_array.__class__ = MDIODataArray
+
     stats = blocked_io.to_zarr(
         segy_file=segy,
         grid=grid,
         data_array=da,
+        header_array=header_array,
         mdio_path_or_buffer=mdio_path_or_buffer,
     )

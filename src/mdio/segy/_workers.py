@@ -12,7 +12,6 @@ import numpy as np
 if TYPE_CHECKING:
     from segy import SegyFile
     from segy.arrays import HeaderArray
-    from zarr import Array
 
     from mdio.core import Grid
 
@@ -55,6 +54,7 @@ def trace_worker(
     segy_file: SegyFile,
     # data_array: Array,
     data_array: mdio.DataArray,
+    metadata_array: mdio.DataArray,
     # metadata_array: Array,
     grid: Grid,
     chunk_indices: tuple[slice, ...],
@@ -94,8 +94,8 @@ def trace_worker(
     print(f"Chunk shape from trace_worker: {chunk_shape}")
 
     tmp_data = np.zeros(chunk_shape, dtype=data_array.dtype)
-    # meta_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1])
-    # tmp_metadata = np.zeros(meta_shape, dtype=metadata_array.dtype)
+    meta_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1])
+    tmp_metadata = np.zeros(meta_shape, dtype=metadata_array.dtype)
 
     # Compute local coordinates within the chunk for each trace
     local_coords: list[np.ndarray] = []
@@ -114,10 +114,12 @@ def trace_worker(
 
     # Populate the temporary buffers
     tmp_data[full_idx] = samples
-    # tmp_metadata[tuple(local_coords)] = headers.view(tmp_metadata.dtype)
+    tmp_metadata[tuple(local_coords)] = headers.view(tmp_metadata.dtype)
 
     # Flush metadata to Zarr
     # metadata_array.set_basic_selection(selection=chunk_indices[:-1], value=tmp_metadata)
+    metadata_array.data[chunk_indices[:-1]] = tmp_metadata
+    metadata_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
 
     # Determine nonzero samples and early-exit if none
     nonzero_mask = samples != 0
@@ -128,10 +130,10 @@ def trace_worker(
     # Flush data to Zarr
     # data_array.set_basic_selection(selection=chunk_indices, value=tmp_data)
 
-    print(f"Writing data to the underlying array...")
-    print(f"Chunk indices: {chunk_indices}")
-    print(f"tmp_data shape: {tmp_data.shape}")
-    print(f"data_array shape: {data_array.shape}")
+    # print("Writing data to the underlying array...")
+    # print(f"Chunk indices: {chunk_indices}")
+    # print(f"tmp_data shape: {tmp_data.shape}")
+    # print(f"data_array shape: {data_array.shape}")
 
     # Direct assignment to underlying data array
     data_array.data[chunk_indices] = tmp_data

@@ -4,9 +4,8 @@ import itertools
 from math import ceil
 
 import numpy as np
-from zarr import Array
-
 import xarray as xr
+from zarr import Array
 
 
 class ChunkIterator:
@@ -39,10 +38,11 @@ class ChunkIterator:
     """
 
     def __init__(self, array: Array | xr.DataArray, chunk_samples: bool = True):
-
         if isinstance(array, xr.DataArray):
             self.arr_shape = array.shape
-            self.len_chunks = array.encoding.get("chunks", self.arr_shape)  # TODO: Chunks don't appear to be present in the encoding. array.chunks is related to dask chunks.
+            self.len_chunks = array.encoding.get(
+                "chunks", self.arr_shape
+            )  # TODO: Chunks don't appear to be present in the encoding. array.chunks is related to dask chunks.
 
             print(f"arr_shape: {self.arr_shape}")
             print(f"len_chunks: {self.len_chunks}")
@@ -95,7 +95,8 @@ class ChunkIterator:
             )
 
             stop_indices = tuple(
-                (dim + 1) * chunk for dim, chunk in zip(current_start, self.len_chunks, strict=True)
+                min((dim + 1) * chunk, array_size) 
+                for dim, chunk, array_size in zip(current_start, self.len_chunks, self.arr_shape, strict=True)
             )
 
             slices = tuple(

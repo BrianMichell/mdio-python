@@ -16,6 +16,7 @@ from dask.array import map_blocks
 from psutil import cpu_count
 from tqdm.auto import tqdm
 
+import mdio.core.v1._overloads
 from mdio.core.indexing import ChunkIterator
 from mdio.segy._workers import trace_worker
 from mdio.segy.creation import SegyPartRecord
@@ -23,13 +24,10 @@ from mdio.segy.creation import concat_files
 from mdio.segy.creation import serialize_to_segy_stack
 from mdio.segy.utilities import find_trailing_ones_index
 
-import mdio.core.v1._overloads 
-
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from segy import SegyFactory
     from segy import SegyFile
-    from zarr import Array as ZarrArray
 
     from mdio.core import Grid
 
@@ -41,6 +39,7 @@ def to_zarr(
     grid: Grid,
     # data_array: ZarrArray,
     data_array: mdio.DataArray,
+    header_array: mdio.DataArray,
     # header_array: ZarrArray,
     mdio_path_or_buffer: str,
 ) -> dict[str, Any]:
@@ -52,6 +51,7 @@ def to_zarr(
         data_array: Zarr array for storing trace data.
         header_array: Zarr array for storing trace headers.
         mdio_path_or_buffer: Path or buffer-like object for storing the MDIO dataset.
+
     Returns:
         Global statistics for the SEG-Y as a dictionary.
     """
@@ -88,7 +88,7 @@ def to_zarr(
             trace_worker,
             repeat(segy_file),
             repeat(data_array),
-            # repeat(header_array),
+            repeat(header_array),
             repeat(grid),
             chunker,
             repeat(mdio_path_or_buffer),
