@@ -59,10 +59,6 @@ def to_zarr(
     chunker = ChunkIterator(data_array, chunk_samples=False)
     num_chunks = len(chunker)
 
-    # print(f"Chunker: {chunker}")
-    for cnk in chunker:
-        print(f"cnk: {cnk}")
-
     chunker = ChunkIterator(data_array, chunk_samples=False)  # rebuild since debug print
 
     # Determine number of workers
@@ -75,8 +71,6 @@ def to_zarr(
         pool_chunksize += 1
 
     tqdm_kw = {"unit": "block", "dynamic_ncols": True}
-
-    print(f"pool_chunksize: {pool_chunksize}")
 
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows

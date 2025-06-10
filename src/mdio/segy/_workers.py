@@ -91,8 +91,6 @@ def trace_worker(
     # Build a temporary buffer for data and metadata for this chunk
     chunk_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1]) + (grid.shape[-1],)
 
-    print(f"Chunk shape from trace_worker: {chunk_shape}")
-
     tmp_data = np.zeros(chunk_shape, dtype=data_array.dtype)
     meta_shape = tuple(sli.stop - sli.start for sli in chunk_indices[:-1])
     tmp_metadata = np.zeros(meta_shape, dtype=metadata_array.dtype)
