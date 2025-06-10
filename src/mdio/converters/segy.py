@@ -659,6 +659,8 @@ def segy_to_mdio_schematized(
 
     ds = MDIO.open(mdio_path_or_buffer)  # Reopen because we needed to do some weird stuff (hacky)
 
+    seismic_coords = [name for name in ds.seismic.coords if name not in ds.seismic.dims]
+
     try:
         dims = get_dims(ds, segy_schema)
     except ValueError as e:
@@ -686,11 +688,8 @@ def segy_to_mdio_schematized(
     storage_options_input = storage_options_input or {}
     storage_options_output = storage_options_output or {}
 
-    mdio_spec = (
-        mdio_segy_spec()
-    )  # TODO: I think this may need to be updated to work with our new input schemas
+    mdio_spec = mdio_segy_spec()
     segy_settings = SegySettings(storage_options=storage_options_input)
-    # segy = SegyFile(url=segy_path, spec=mdio_spec, settings=segy_settings)
     segy = SegyFile(url=segy_schema["path"], spec=mdio_spec, settings=segy_settings)
 
     text_header = segy.text_header
@@ -701,29 +700,48 @@ def segy_to_mdio_schematized(
     index_fields = []
     for name, byte, format_ in zip(index_names, index_bytes, index_types, strict=True):
         index_fields.append(HeaderField(name=name, byte=byte, format=format_))
+
+    # Add the coordinates as pseudo-index_fields.
+    # This allows us to sneakily grab them from the grid builder (I hope)
+    # First, we need to extract the index bytes and index types from the segy_schema.
+    coord_index_names = []
+    coord_index_bytes = []
+    coord_index_types = []
+    for coord in segy_schema["trace"]["header_entries"]:
+        if coord["name"] in seismic_coords:
+            coord_index_names.append(coord["name"])
+            coord_index_bytes.append(coord["byte_start"])
+            coord_index_types.append(coord["format"])
+
+    for newName, newByte, newFormat in zip(coord_index_names, coord_index_bytes, coord_index_types, strict=True):
+        index_fields.append(HeaderField(name=newName, byte=newByte, format=newFormat))
+
     mdio_spec_grid = mdio_spec.customize(trace_header_fields=index_fields)
     segy_grid = SegyFile(url=segy_schema["path"], spec=mdio_spec_grid, settings=segy_settings)
-
     dimensions, chunksize, index_headers = get_grid_plan(
         segy_file=segy_grid,
         return_headers=True,
         chunksize=chunksize,
         grid_overrides=grid_overrides,
     )
+    # Override the "sample" dimension name
     dimensions[-1].name = get_sample_name(ds, dimensions)
-    # print(dimensions)
+
+    ds_coords = [dim for dim in dimensions if dim.name in seismic_coords]
+    dimensions = [dim for dim in dimensions if dim.name not in seismic_coords]
+
     grid = Grid(dims=dimensions)
     grid_density_qc(grid, num_traces)
     grid.build_map(index_headers)
 
-    # Override the "sample" dimension name
+    # print(f"dimensions: {dimensions}")
+    # print(f"chunksize: {chunksize}")
+    # print(f"index_headers: {index_headers}")
 
     # Set dimension coordinates
     new_coords = {dim.name: dim.coords for dim in dimensions}
     ds = ds.assign_coords(new_coords)
     ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
-
-    # Set all coordinates which are not dimensions, root Variables, or live_mask
 
     # Check grid validity by ensuring every trace's header-index is within dimension bounds
     valid_mask = np.ones(grid.num_traces, dtype=bool)
@@ -744,8 +762,6 @@ def segy_to_mdio_schematized(
     del valid_mask
     gc.collect()
 
-    coords = ds.seismic.coords  #  TODO: We also need to iterate over the coords and assign their values in parallel with the live_mask
-
     # live_mask_array = ds.live_mask  # TODO: Make this more robust
     live_mask_array = ds.trace_mask
     from mdio.core.v1._overloads import MDIODataArray
@@ -756,8 +772,6 @@ def segy_to_mdio_schematized(
 
     chunker = ChunkIterator(live_mask_array, chunk_samples=True)
     for chunk_indices in chunker:
-        # print(f"chunk_indices: {chunk_indices}")
-        # chunk_indices is a tuple of N–1 slice objects
         trace_ids = grid.get_traces_for_chunk(chunk_indices)
         if trace_ids.size == 0:
             # Free memory immediately for empty chunks
@@ -782,7 +796,6 @@ def segy_to_mdio_schematized(
             if local_idx.dtype != np.intp:
                 local_idx = local_idx.astype(np.intp)
             local_coords.append(local_idx)
-            # local_idx is now owned by local_coords list, safe to continue
 
         # Free trace_ids as soon as we're done with it
         del trace_ids
@@ -794,13 +807,10 @@ def segy_to_mdio_schematized(
         del local_coords
 
         # Write the entire block to Zarr at once
-        # live_mask_array.isel(chunk_indices).values[:] = block
         live_mask_array[chunk_indices] = block
 
         # Free block immediately after writing
         del block
-
-        # Force garbage collection periodically to free memory aggressively
         gc.collect()
 
     # Save the entire dataset to persist the live_mask changes
