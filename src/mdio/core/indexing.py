@@ -44,12 +44,6 @@ class ChunkIterator:
                 "chunks", self.arr_shape
             )  # TODO: Chunks don't appear to be present in the encoding. array.chunks is related to dask chunks.
 
-            print(f"arr_shape: {self.arr_shape}")
-            print(f"len_chunks: {self.len_chunks}")
-
-            print(f"array.encoding: {array.encoding}")
-            print(f"array.chunksizes: {array.chunksizes}")
-
         else:
             self.arr_shape = array.shape
             self.len_chunks = array.chunks
