@@ -396,10 +396,6 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     grid_density_qc(grid, num_traces)
     grid.build_map(index_headers)
 
-    print(f"Dimensions: {dimensions}")
-    print(f"Chunksize: {chunksize}")
-    print(f"Index headers: {index_headers}")
-
     builder = MDIOBuilder(name=mdio_path_or_buffer, attributes={"Description": "PH"})
 
     for dim in dimensions:
@@ -656,7 +652,6 @@ def segy_to_mdio_schematized(
     from mdio.core.v1.factory import from_contract
 
     serialized_mdio = from_contract(mdio_path_or_buffer, mdio_schema)
-
     ds = MDIO.open(mdio_path_or_buffer)  # Reopen because we needed to do some weird stuff (hacky)
 
     seismic_coords = [name for name in ds.seismic.coords if name not in ds.seismic.dims]
@@ -670,18 +665,15 @@ def segy_to_mdio_schematized(
     index_types = [dims[dim]["index_type"] for dim in dims]
     index_bytes = [dims[dim]["index_byte"] for dim in dims]
     
-
     chunksize = None
     live_mask_valid = False
     for variable in mdio_schema["variables"]:
         if variable["name"] == "seismic":
             chunksize = variable["metadata"]["chunkGrid"]["configuration"]["chunkShape"]
-        elif variable["name"] == "live_mask" or variable["name"] == "trace_mask":
+        elif variable["name"] in ("live_mask", "trace_mask"):
             live_mask_valid = True
-
     if chunksize is None:
         raise ValueError("Couldn't determine the primary seismic Variable in the MDIO schema!")
-
     if not live_mask_valid:
         raise ValueError("Couldn't find the live_mask Variable in the MDIO schema!")
 
@@ -727,6 +719,7 @@ def segy_to_mdio_schematized(
     # Override the "sample" dimension name
     dimensions[-1].name = get_sample_name(ds, dimensions)
 
+    # Split grid vs seismic dims
     ds_coords = [dim for dim in dimensions if dim.name in seismic_coords]
     dimensions = [dim for dim in dimensions if dim.name not in seismic_coords]
 
@@ -813,12 +806,55 @@ def segy_to_mdio_schematized(
         del block
         gc.collect()
 
+    # Eagerly write coordinate variables before ingesting seismic traces
+    coord_values = {c.name: index_headers[c.name] for c in ds_coords}
+    if coord_values:
+        from mdio.core.indexing import ChunkIterator
+        from mdio.core.v1._overloads import MDIODataArray
+
+        for name, values in coord_values.items():
+            coord_array = ds[name]
+            coord_array.__class__ = MDIODataArray
+
+            chunker = ChunkIterator(coord_array, chunk_samples=True)
+            for chunk_indices in chunker:
+                trace_ids = grid.get_traces_for_chunk(chunk_indices)
+                if trace_ids.size == 0:
+                    del trace_ids
+                    continue
+
+                block_shape = tuple(sl.stop - sl.start for sl in chunk_indices)
+                block = np.zeros(block_shape, dtype=coord_array.dtype)
+
+                local_coords: list[np.ndarray] = []
+                for dim_idx, sl in enumerate(chunk_indices):
+                    hdr_arr = grid.header_index_arrays[dim_idx]
+                    indexed_coords = hdr_arr[trace_ids]
+                    local_idx = indexed_coords - sl.start
+                    if local_idx.dtype != np.intp:
+                        local_idx = local_idx.astype(np.intp)
+                    local_coords.append(local_idx)
+
+                block[tuple(local_coords)] = values[trace_ids]
+                coord_array[chunk_indices] = block
+
+                del block
+                del local_coords
+                del trace_ids
+                gc.collect()
+
+            ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
+
+            del coord_array
+            del chunker
+            gc.collect()
+            
+
     # Save the entire dataset to persist the live_mask changes
     ds.to_mdio(store=mdio_path_or_buffer, mode="r+")
 
     # Final cleanup
     del live_mask_array
-    del chunker
     gc.collect()
 
     da = ds.seismic  # TODO: Yolo the seismic Variable
