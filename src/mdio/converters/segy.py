@@ -18,6 +18,7 @@ from mdio.converters.exceptions import GridTraceCountError
 from mdio.converters.exceptions import GridTraceSparsityError
 from mdio.core import Grid
 from mdio.core.utils_write import get_live_mask_chunksize as live_chunks
+from mdio.core.utils_write import write_attribute
 from mdio.core.v1.builder import MDIODatasetBuilder as MDIOBuilder
 from mdio.segy import blocked_io
 from mdio.segy.compat import mdio_segy_spec
@@ -26,6 +27,8 @@ from mdio.segy.utilities import get_grid_plan
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+
+import zarr
 
 try:
     import zfpy  # Base library
@@ -651,6 +654,12 @@ def segy_to_mdio_schematized(
     from mdio.core.v1._overloads import MDIO
     from mdio.core.v1.factory import from_contract
 
+    import os
+    from zarr.core.config import config as zarr_config
+
+    num_cpus = int(os.getenv("MDIO__IMPORT__CPUT_COUNT", "1"))
+    zarr_config.set({"threading.max_workers": num_cpus})
+
     serialized_mdio = from_contract(mdio_path_or_buffer, mdio_schema)
     ds = MDIO.open(mdio_path_or_buffer)  # Reopen because we needed to do some weird stuff (hacky)
 
@@ -857,6 +866,8 @@ def segy_to_mdio_schematized(
     del live_mask_array
     gc.collect()
 
+    zarr_config.set({"threading.max_workers": 1})
+
     da = ds.seismic  # TODO: Yolo the seismic Variable
     da.__class__ = MDIODataArray
 
@@ -870,3 +881,8 @@ def segy_to_mdio_schematized(
         header_array=header_array,
         mdio_path_or_buffer=mdio_path_or_buffer,
     )
+
+    root_group = zarr.open(mdio_path_or_buffer, mode="a")
+    write_attribute(name="statsV1", zarr_group=root_group["seismic"], attribute=stats)
+
+    zarr.consolidate_metadata(root_group.store)

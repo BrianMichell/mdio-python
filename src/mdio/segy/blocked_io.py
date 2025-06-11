@@ -42,6 +42,7 @@ def to_zarr(
     header_array: mdio.DataArray,
     # header_array: ZarrArray,
     mdio_path_or_buffer: str,
+    num_bins: int = 100,  # Added parameter for histogram bins
 ) -> dict[str, Any]:
     """Blocked I/O from SEG-Y to chunked `zarr.core.Array`.
 
@@ -51,6 +52,7 @@ def to_zarr(
         data_array: Zarr array for storing trace data.
         header_array: Zarr array for storing trace headers.
         mdio_path_or_buffer: Path or buffer-like object for storing the MDIO dataset.
+        num_bins: Number of bins for histogram calculation.
 
     Returns:
         Global statistics for the SEG-Y as a dictionary.
@@ -86,6 +88,7 @@ def to_zarr(
             repeat(grid),
             chunker,
             repeat(mdio_path_or_buffer),
+            repeat(num_bins),  # Pass num_bins to workers
             chunksize=pool_chunksize,
         )
 
@@ -103,20 +106,42 @@ def to_zarr(
     # REF: https://www.mathwords.com/r/root_mean_square.htm
     # Aggregate statistics
     chunk_stats = [stat for stat in chunk_stats if stat is not None]
-    # Each stat: (count, sum, sum_sq, min, max). Transpose to unpack rows.
-    # glob_count, glob_sum, glob_sum_square, glob_min, glob_max = zip(*chunk_stats, strict=False)
-    # TODO: Fix me
-    glob_count = 0
-    glob_sum = 0
-    glob_sum_square = 0
-    glob_min = 0
-    glob_max = 0
+    # Each stat: (count, sum, sum_sq, min, max, hist_counts, hist_centers). Transpose to unpack rows.
+    glob_count, glob_sum, glob_sum_square, glob_min, glob_max, hist_counts_list, hist_centers_list = zip(*chunk_stats, strict=False)
 
-    glob_count = np.sum(np.array(glob_count, dtype=np.uint64))
+    glob_count = np.sum(glob_count, dtype=np.float64)
     glob_sum = np.sum(np.array(glob_sum, dtype=np.float64))
     glob_sum_square = np.sum(np.array(glob_sum_square, dtype=np.float64))
     glob_min = np.min(np.array(glob_min, dtype=np.float32))
     glob_max = np.max(np.array(glob_max, dtype=np.float32))
+
+    # Aggregate histograms from all chunks
+    # Use the first chunk's bin centers as reference (they should all be similar for same data range)
+    if hist_centers_list:
+        # Create global histogram bins based on actual data range
+        global_bin_edges = np.linspace(glob_min, glob_max, num_bins + 1)
+        global_bin_centers = (global_bin_edges[:-1] + global_bin_edges[1:]) / 2
+        
+        # Re-bin all chunk data into consistent global bins
+        aggregated_counts = np.zeros(num_bins, dtype=np.int64)
+        
+        # For each chunk, we need to redistribute its counts to the global bins
+        for chunk_counts, chunk_centers in zip(hist_counts_list, hist_centers_list, strict=False):
+            # Convert chunk counts back to individual values for rebinning
+            # This is an approximation - we assume uniform distribution within each bin
+            for i, (count, center) in enumerate(zip(chunk_counts, chunk_centers, strict=False)):
+                if count > 0:
+                    # Find which global bin this chunk bin center belongs to
+                    global_bin_idx = np.searchsorted(global_bin_edges[1:], center)
+                    global_bin_idx = min(global_bin_idx, num_bins - 1)  # Clamp to valid range
+                    aggregated_counts[global_bin_idx] += count
+        
+        bin_centers = global_bin_centers.tolist()
+        counts = aggregated_counts.tolist()
+    else:
+        # No data processed, return empty histogram
+        bin_centers = []
+        counts = []
 
     glob_mean = glob_sum / glob_count
     glob_std = np.sqrt(glob_sum_square / glob_count - (glob_sum / glob_count) ** 2)
@@ -126,7 +151,19 @@ def to_zarr(
     glob_min = float(glob_min)
     glob_max = float(glob_max)
 
-    return {"mean": glob_mean, "std": glob_std, "rms": glob_rms, "min": glob_min, "max": glob_max}
+    return {
+        "count": glob_count, 
+        "min": glob_min, 
+        "max": glob_max, 
+        "sum": glob_sum, 
+        "sumSquares": glob_sum_square,
+        "histogram": {
+            "binCenters": bin_centers,
+            "counts": counts
+        }
+    }
+
+    # return {"mean": glob_mean, "std": glob_std, "rms": glob_rms, "min": glob_min, "max": glob_max}
 
 
 def segy_record_concat(

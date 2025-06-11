@@ -59,6 +59,7 @@ def trace_worker(
     grid: Grid,
     chunk_indices: tuple[slice, ...],
     mdio_path_or_buffer: str,
+    num_bins: int = 100,  # Added parameter for histogram bins
 ) -> tuple[Any, ...] | None:
     """Worker function for multi-process enabled blocked SEG-Y I/O.
 
@@ -75,6 +76,8 @@ def trace_worker(
         metadata_array: Handle for zarr.Array we are writing trace headers
         grid: mdio.Grid instance
         chunk_indices: Tuple consisting of the chunk slice indices for each dimension
+        mdio_path_or_buffer: Path or buffer for storing the MDIO dataset
+        num_bins: Number of bins for histogram calculation
 
     Returns:
         Partial statistics for chunk, or None
@@ -144,4 +147,9 @@ def trace_worker(
     min_val = float(flattened_nonzero.min())
     max_val = float(flattened_nonzero.max())
 
-    return (nonzero_count, chunk_sum, chunk_sum_squares, min_val, max_val)
+    # Calculate histogram for nonzero values
+    hist_counts, hist_edges = np.histogram(flattened_nonzero, bins=num_bins)
+    # Calculate bin centers from edges
+    hist_centers = (hist_edges[:-1] + hist_edges[1:]) / 2
+    
+    return (nonzero_count, chunk_sum, chunk_sum_squares, min_val, max_val, hist_counts, hist_centers)
