@@ -657,7 +657,7 @@ def segy_to_mdio_schematized(
     import os
     from zarr.core.config import config as zarr_config
 
-    num_cpus = int(os.getenv("MDIO__IMPORT__CPUT_COUNT", "1"))
+    num_cpus = int(os.getenv("MDIO__EXPORT__CPUT_COUNT", "1"))
     zarr_config.set({"threading.max_workers": num_cpus})
 
     serialized_mdio = from_contract(mdio_path_or_buffer, mdio_schema)
