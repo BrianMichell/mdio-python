@@ -36,13 +36,11 @@ def get_mdio_header_defined_fields(mdio: MDIO) -> HeaderSpec:
     fields = []
     offset = 1
     for field_name, (field_dtype, _) in mdio.headers.dtype.fields.items():
-        # print(f"field_name: {field_name}, field_dtype: {field_dtype}, offset: {offset}")
         # Convert NumPy dtype to string format
         format_str = str(field_dtype).replace('dtype(', '').replace(')', '')
         fields.append(HeaderField(name=field_name, byte=offset, format=format_str))
         offset += field_dtype.itemsize
 
-    print(f"Custom header fields offset: {offset}")
     return HeaderSpec(fields=fields, item_size=240)
 
 

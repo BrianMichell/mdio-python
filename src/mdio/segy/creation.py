@@ -107,22 +107,8 @@ def mdio_spec_to_segy(  # noqa: PLR0913
 
     # from segy.schema.HeaderSpec import HeaderField, HeaderSpec
     from segy.schema import HeaderField, HeaderSpec
-    # fields = []
-    # offset = 1
-    # for field_name, (field_dtype, _) in mdio.headers.dtype.fields.items():
-    #     print(f"field_name: {field_name}, field_dtype: {field_dtype}, offset: {offset}")
-    #     # Convert NumPy dtype to string format
-    #     format_str = str(field_dtype).replace('dtype(', '').replace(')', '')
-    #     fields.append(HeaderField(name=field_name, byte=offset, format=format_str))
-    #     offset += field_dtype.itemsize
-
     fields = get_mdio_header_defined_fields(mdio)
-
-    print(f"Before spec: {spec.trace}")
-    # mdio_header_mapping = HeaderSpec(fields=fields)
     spec.trace.header = fields
-
-    print(f"After spec: {spec.trace}")
 
     spec.endianness = Endianness(output_endian)
     factory = make_segy_factory(mdio, spec=spec)

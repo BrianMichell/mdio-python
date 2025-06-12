@@ -128,14 +128,6 @@ def trace_worker(
     if nonzero_count == 0:
         return None
 
-    # Flush data to Zarr
-    # data_array.set_basic_selection(selection=chunk_indices, value=tmp_data)
-
-    # print("Writing data to the underlying array...")
-    # print(f"Chunk indices: {chunk_indices}")
-    # print(f"tmp_data shape: {tmp_data.shape}")
-    # print(f"data_array shape: {data_array.shape}")
-
     # Direct assignment to underlying data array
     data_array.data[chunk_indices] = tmp_data
     data_array.to_mdio(store=mdio_path_or_buffer, mode="r+")
