@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 from mdio.api.accessor import MDIOReader
 from mdio.segy.compat import mdio_segy_spec
 from mdio.segy.compat import revision_encode
+from mdio.segy.compat import get_mdio_header_defined_fields
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -26,12 +27,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def make_segy_factory(mdio: MDIOReader, spec: SegySpec) -> SegyFactory:
+# def make_segy_factory(mdio: MDIOReader, spec: SegySpec) -> SegyFactory:
+def make_segy_factory(mdio: MDIO, spec: SegySpec) -> SegyFactory:
     """Generate SEG-Y factory from MDIO metadata."""
-    grid = mdio.grid
-    sample_dim = grid.select_dim("sample")
-    sample_interval = sample_dim[1] - sample_dim[0]
-    samples_per_trace = len(sample_dim)
+    # grid = mdio.grid
+    # sample_dim = grid.select_dim("sample")
+    sample_dim = mdio.seismic.dims[-1]
+
+    sample_interval = mdio[sample_dim][1] - mdio[sample_dim][0]
+    samples_per_trace = len(mdio[sample_dim])
 
     return SegyFactory(
         spec=spec,
@@ -48,7 +52,8 @@ def mdio_spec_to_segy(  # noqa: PLR0913
     storage_options: dict[str, Any],
     new_chunks: tuple[int, ...],
     backend: str,
-) -> tuple[MDIOReader, SegyFactory]:
+# ) -> tuple[MDIOReader, SegyFactory]:
+) -> tuple[MDIO, SegyFactory]:
     """Create SEG-Y file without any traces given MDIO specification.
 
     This function opens an MDIO file, gets some relevant information for SEG-Y files, then creates
@@ -73,25 +78,61 @@ def mdio_spec_to_segy(  # noqa: PLR0913
     Returns:
         Initialized MDIOReader for MDIO file and return SegyFactory
     """
-    mdio = MDIOReader(
-        mdio_path_or_buffer=mdio_path_or_buffer,
-        access_pattern=access_pattern,
-        storage_options=storage_options,
-        return_metadata=True,
-        new_chunks=new_chunks,
-        backend=backend,
-        disk_cache=False,  # Making sure disk caching is disabled
-    )
+    # mdio = MDIOReader(
+    #     mdio_path_or_buffer=mdio_path_or_buffer,
+    #     access_pattern=access_pattern,
+    #     storage_options=storage_options,
+    #     return_metadata=True,
+    #     new_chunks=new_chunks,
+    #     backend=backend,
+    #     disk_cache=False,  # Making sure disk caching is disabled
+    # )
 
-    mdio_file_version = mdio.root.attrs["api_version"]
+    from mdio.core.v1._overloads import MDIO
+
+    mdio = MDIO.open(mdio_path_or_buffer)
+
+    # mdio_file_version = mdio.root.attrs["api_version"]
+    # mdio_file_version = mdio.attrs["api_version"]
+    try:
+        mdio_file_version = mdio.attrs["apiVersion"]
+    except KeyError:
+        try:
+            mdio_file_version = mdio.attrs["api_version"]
+        except KeyError:
+            raise ValueError("Could not determine MDIO file version")
+
+
     spec = mdio_segy_spec(mdio_file_version)
+
+    # from segy.schema.HeaderSpec import HeaderField, HeaderSpec
+    from segy.schema import HeaderField, HeaderSpec
+    # fields = []
+    # offset = 1
+    # for field_name, (field_dtype, _) in mdio.headers.dtype.fields.items():
+    #     print(f"field_name: {field_name}, field_dtype: {field_dtype}, offset: {offset}")
+    #     # Convert NumPy dtype to string format
+    #     format_str = str(field_dtype).replace('dtype(', '').replace(')', '')
+    #     fields.append(HeaderField(name=field_name, byte=offset, format=format_str))
+    #     offset += field_dtype.itemsize
+
+    fields = get_mdio_header_defined_fields(mdio)
+
+    print(f"Before spec: {spec.trace}")
+    # mdio_header_mapping = HeaderSpec(fields=fields)
+    spec.trace.header = fields
+
+    print(f"After spec: {spec.trace}")
+
     spec.endianness = Endianness(output_endian)
     factory = make_segy_factory(mdio, spec=spec)
 
-    text_str = "\n".join(mdio.text_header)
+    # text_str = "\n".join(mdio.text_header)
+    text_str = "\n".join(mdio.attrs["text_header"])
     text_bytes = factory.create_textual_header(text_str)
 
-    binary_header = revision_encode(mdio.binary_header, mdio_file_version)
+    # binary_header = revision_encode(mdio.binary_header, mdio_file_version)
+    binary_header = revision_encode(mdio.attrs["binary_header"], mdio_file_version)
     bin_hdr_bytes = factory.create_binary_header(binary_header)
 
     with output_segy_path.open(mode="wb") as fp:

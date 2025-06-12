@@ -22,6 +22,7 @@ from mdio.core.utils_write import write_attribute
 from mdio.core.v1.builder import MDIODatasetBuilder as MDIOBuilder
 from mdio.segy import blocked_io
 from mdio.segy.compat import mdio_segy_spec
+from mdio.segy.compat import get_mdio_header_defined_fields
 from mdio.segy.utilities import get_grid_plan
 
 if TYPE_CHECKING:
@@ -690,6 +691,11 @@ def segy_to_mdio_schematized(
     storage_options_output = storage_options_output or {}
 
     mdio_spec = mdio_segy_spec()
+    mdio_spec.trace.header = get_mdio_header_defined_fields(ds)
+
+    # print(f"mdio_spec: {mdio_spec}")
+    # raise ValueError("Stop here")
+
     segy_settings = SegySettings(storage_options=storage_options_input)
     segy = SegyFile(url=segy_schema["path"], spec=mdio_spec, settings=segy_settings)
 
@@ -718,6 +724,10 @@ def segy_to_mdio_schematized(
         index_fields.append(HeaderField(name=newName, byte=newByte, format=newFormat))
 
     mdio_spec_grid = mdio_spec.customize(trace_header_fields=index_fields)
+
+    print(f"mdio_spec_grid: {mdio_spec_grid}")
+    # raise ValueError("Stop here")
+
     segy_grid = SegyFile(url=segy_schema["path"], spec=mdio_spec_grid, settings=segy_settings)
     dimensions, chunksize, index_headers = get_grid_plan(
         segy_file=segy_grid,
@@ -884,5 +894,7 @@ def segy_to_mdio_schematized(
 
     root_group = zarr.open(mdio_path_or_buffer, mode="a")
     write_attribute(name="statsV1", zarr_group=root_group["seismic"], attribute=stats)
+    write_attribute(name="text_header", zarr_group=root_group, attribute=text_header.split("\n"))
+    write_attribute(name="binary_header", zarr_group=root_group, attribute=binary_header.to_dict())
 
     zarr.consolidate_metadata(root_group.store)

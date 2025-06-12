@@ -84,18 +84,29 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
         ... )
 
     """
+
+    from mdio.core.v1._overloads import MDIO
+
     backend = "dask"
 
     output_segy_path = Path(output_segy_path)
 
-    mdio = MDIOReader(
-        mdio_path_or_buffer=mdio_path_or_buffer,
-        access_pattern=access_pattern,
-        storage_options=storage_options,
-    )
+    # mdio = MDIOReader(
+    #     mdio_path_or_buffer=mdio_path_or_buffer,
+    #     access_pattern=access_pattern,
+    #     storage_options=storage_options,
+    # )
+
+    mdio = MDIO.open(mdio_path_or_buffer)
+
+    seismic_chunks = mdio.seismic.encoding.get("chunks", mdio.seismic.shape)
+
+    print(f"mdio.seismic.chunks: {seismic_chunks}")
+    print(f"mdio.seismic.shape: {mdio.seismic.shape}")
+    print(f"mdio.seismic.dtype: {mdio.seismic.dtype}")
 
     if new_chunks is None:
-        new_chunks = segy_export_rechunker(mdio.chunks, mdio.shape, mdio._traces.dtype)
+        new_chunks = segy_export_rechunker(seismic_chunks, mdio.seismic.shape, mdio.seismic.dtype)
 
     creation_args = [
         mdio_path_or_buffer,
@@ -118,7 +129,10 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
     else:
         mdio, segy_factory = mdio_spec_to_segy(*creation_args)
 
-    live_mask = mdio.live_mask.compute()
+    print(f"segy_factory: {segy_factory}")
+
+    # live_mask = mdio.live_mask.compute()
+    live_mask = mdio.trace_mask.compute().to_numpy()
 
     if selection_mask is not None:
         live_mask = live_mask & selection_mask
@@ -138,8 +152,28 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
         dim_slices += (slice(start, stop),)
 
     # Lazily pull the data with limits now, and limit mask so its the same shape.
-    live_mask, headers, samples = mdio[dim_slices]
-    live_mask = live_mask.rechunk(headers.chunks)
+    print(f"dim_slices: {dim_slices}")
+    indexer = {}
+    for dim, i in zip(mdio.trace_mask.dims, dim_slices):
+        indexer[dim] = i
+
+    print(f"indexer: {indexer}")
+    # live_mask = mdio.trace_mask.isel(dim_slices[:-1])
+    # headers = mdio.headers.isel(dim_slices[:-1])
+    # samples = mdio.seismic.isel(dim_slices[:-1])
+    live_mask = mdio.trace_mask.isel(indexer)
+    print(f"live_mask {live_mask}")
+    
+    headers = mdio.headers.isel(indexer)
+    samples = mdio.seismic.isel(indexer)
+    # live_mask, headers, samples = mdio[dim_slices]
+    live_mask = live_mask.chunk({} if headers.chunks is None else headers.chunks)
+    headers = headers.chunk({} if headers.chunks is None else headers.chunks)
+
+    samples_chunks = ({} if headers.chunks is None else headers.chunks)
+    samples_chunks = samples_chunks + (mdio.seismic.shape[-1],)
+
+    samples = samples.chunk(samples_chunks)
 
     if selection_mask is not None:
         selection_mask = selection_mask[dim_slices]
@@ -149,12 +183,14 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
     out_dir = output_segy_path.parent
     tmp_dir = TemporaryDirectory(dir=out_dir)
 
+    from dask.array import from_array
+
     with tmp_dir:
         with TqdmCallback(desc="Unwrapping MDIO Blocks"):
             block_records = to_segy(
-                samples=samples,
-                headers=headers,
-                live_mask=live_mask,
+                samples=from_array(samples),
+                headers=headers.values,
+                live_mask=live_mask.values,
                 segy_factory=segy_factory,
                 file_root=tmp_dir.name,
             )

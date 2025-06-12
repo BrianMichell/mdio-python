@@ -31,6 +31,21 @@ MDIO_VERSION = metadata.version("multidimio")
 logger = logging.getLogger(__name__)
 
 
+def get_mdio_header_defined_fields(mdio: MDIO) -> HeaderSpec:
+    from segy.schema import HeaderField, HeaderSpec
+    fields = []
+    offset = 1
+    for field_name, (field_dtype, _) in mdio.headers.dtype.fields.items():
+        # print(f"field_name: {field_name}, field_dtype: {field_dtype}, offset: {offset}")
+        # Convert NumPy dtype to string format
+        format_str = str(field_dtype).replace('dtype(', '').replace(')', '')
+        fields.append(HeaderField(name=field_name, byte=offset, format=format_str))
+        offset += field_dtype.itemsize
+
+    print(f"Custom header fields offset: {offset}")
+    return HeaderSpec(fields=fields, item_size=240)
+
+
 def get_binary_fields() -> list[HeaderField]:
     """Generate binary header fields from equinor/segyio fields."""
     revision_field = binary.Rev1.SEGY_REVISION.model
@@ -44,7 +59,6 @@ def get_binary_fields() -> list[HeaderField]:
         elif alias != "SEGYRevisionMinor":
             mdio_v0_bin_fields.append(field.model)
     return mdio_v0_bin_fields
-
 
 def get_trace_fields(version_str: str) -> list[HeaderField]:
     """Generate trace header fields.
@@ -67,7 +81,7 @@ def get_trace_fields(version_str: str) -> list[HeaderField]:
     """
     trace_fields = [field.model for field in SEGYIO_TRACE_FIELD_MAP.values()]
     version_obj = version.parse(version_str)
-    if version_obj > version.parse("0.7.4"):
+    if version_obj > version.parse("0.7.4") and version_obj < version.parse("1.0.0"):
         trace_fields.append(HeaderField(name="unassigned", byte=233, format="int64"))
     return trace_fields
 
