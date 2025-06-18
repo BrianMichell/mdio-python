@@ -46,14 +46,28 @@ def get_grid_plan(  # noqa:  C901
     Returns:
         All index dimensions and chunksize or dimensions and chunksize together with header values.
     """
+    from datetime import datetime, timezone, timedelta
     if grid_overrides is None:
         grid_overrides = {}
 
+    central = timezone(timedelta(hours=-6))
+    now = datetime.now(central)
+    print(f"[{now}] Parsing index headers...", flush=True)
     index_headers = parse_index_headers(segy_file=segy_file)
     index_names = list(index_headers.dtype.names)
-
+    now = datetime.now(central)
+    print(f"[{now}] Index headers parsed", flush=True)
+    # Debug prints for raw index header value counts
+    print("DEBUG RAW index header value counts:", index_headers.dtype.names, flush=True)
+    for header_name in index_headers.dtype.names:
+        print(f"DEBUG RAW {header_name} value counts:", flush=True)
+        values, counts = np.unique(index_headers[header_name], return_counts=True)
+        for val, cnt in zip(values, counts):
+            print(f"\t{val}: {cnt}", flush=True)
     dims = []
 
+    now = datetime.now(central)
+    print(f"[{now}] Handling grid overrides...", flush=True)
     # Handle grid overrides.
     override_handler = GridOverrider()
     index_headers, index_names, chunksize = override_handler.run(
@@ -62,23 +76,49 @@ def get_grid_plan(  # noqa:  C901
         chunksize=chunksize,
         grid_overrides=grid_overrides,
     )
+    print(f"[{now}] Grid overrides handled", flush=True)
+    # Debug prints for post-override index header value counts
+    print("DEBUG POST index header value counts:", index_headers.dtype.names, flush=True)
+    for header_name in index_headers.dtype.names:
+        print(f"DEBUG POST {header_name} value counts:", flush=True)
+        values, counts = np.unique(index_headers[header_name], return_counts=True)
+        for val, cnt in zip(values, counts):
+            print(f"\t{val}: {cnt}", flush=True)
+    now = datetime.now(central)
+    print(f"[{now}] Grid overrides handled", flush=True)
 
+    now = datetime.now(central)
+    print(f"[{now}] Creating dimensions...", flush=True)
     for index_name in index_names:
         dim_unique = np.unique(index_headers[index_name])
         dims.append(Dimension(coords=dim_unique, name=index_name))
+    now = datetime.now(central)
+    print(f"[{now}] Dimensions created", flush=True)
 
+    now = datetime.now(central)
+    print(f"[{now}] Creating sample labels...", flush=True)
     sample_labels = segy_file.sample_labels / 1000  # normalize
+    now = datetime.now(central)
+    print(f"[{now}] Sample labels created", flush=True)
 
     if all(sample_labels.astype("int64") == sample_labels):
         sample_labels = sample_labels.astype("int64")
 
+    now = datetime.now(central)
+    print(f"[{now}] Creating sample dimension...", flush=True)
     sample_dim = Dimension(coords=sample_labels, name="sample")
-
+    now = datetime.now(central)
+    print(f"[{now}] Sample dimension created", flush=True)
     dims.append(sample_dim)
+    now = datetime.now(central)
+    print(f"[{now}] Sample dimension appended", flush=True)
 
     if return_headers:
+        now = datetime.now(central)
+        print(f"[{now}] Returning headers...", flush=True)
         return dims, chunksize, index_headers
-
+    now = datetime.now(central)
+    print(f"[{now}] Returning dims and chunksize...", flush=True)
     return dims, chunksize
 
 

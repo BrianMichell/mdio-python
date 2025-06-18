@@ -375,38 +375,47 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     storage_options_input = storage_options_input or {}
     storage_options_output = storage_options_output or {}
 
+    print("Opening SEG-Y...")
+
     # Open SEG-Y with MDIO's SegySpec. Endianness will be inferred.
     mdio_spec = mdio_segy_spec()
+    print("MDIO spec created")
     segy_settings = SegySettings(storage_options=storage_options_input)
     segy = SegyFile(url=segy_path, spec=mdio_spec, settings=segy_settings)
+    print("SEG-Y file opened")
 
     text_header = segy.text_header
     binary_header = segy.binary_header
     num_traces = segy.num_traces
-
+    print("num_traces", num_traces)
     # Index the dataset using a spec that interprets the user provided index headers.
     index_fields = []
     for name, byte, format_ in zip(index_names, index_bytes, index_types, strict=True):
         index_fields.append(HeaderField(name=name, byte=byte, format=format_))
     mdio_spec_grid = mdio_spec.customize(trace_header_fields=index_fields)
     segy_grid = SegyFile(url=segy_path, spec=mdio_spec_grid, settings=segy_settings)
-
+    print("SEGY grid created")
     dimensions, chunksize, index_headers = get_grid_plan(
         segy_file=segy_grid,
         return_headers=True,
         chunksize=chunksize,
         grid_overrides=grid_overrides,
     )
+    print("grid plan created")
     grid = Grid(dims=dimensions)
+    print("grid created")
     grid_density_qc(grid, num_traces)
+    print("grid density qc done")
     grid.build_map(index_headers)
 
     # Check grid validity by ensuring every trace's header-index is within dimension bounds
     valid_mask = np.ones(grid.num_traces, dtype=bool)
+    print("valid_mask shape", valid_mask.shape)
     for d_idx in range(len(grid.header_index_arrays)):
         coords = grid.header_index_arrays[d_idx]
         valid_mask &= coords < grid.shape[d_idx]
     valid_count = int(np.count_nonzero(valid_mask))
+    print("valid_count", valid_count)
     if valid_count != num_traces:
         for dim_name in grid.dim_names:
             dim_min = grid.get_min(dim_name)
@@ -416,6 +425,8 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
         raise GridTraceCountError(valid_count, num_traces)
 
     import gc
+
+    # raise Exception("Stop here")
 
     del valid_mask
     gc.collect()
@@ -453,6 +464,8 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     )
     config = MDIOCreateConfig(path=mdio_path_or_buffer, grid=grid, variables=[var_conf])
 
+    print("Creating empty...")
+
     root_group = create_empty(
         config,
         overwrite=overwrite,
@@ -464,7 +477,10 @@ def segy_to_mdio(  # noqa: PLR0913, PLR0915, PLR0912
     data_array = data_group[f"chunked_{suffix}"]
     header_array = meta_group[f"chunked_{suffix}_trace_headers"]
 
+    print("Creating live mask...")
+
     live_mask_array = meta_group["live_mask"]
+    print(live_mask_array.shape)
     # 'live_mask_array' has the same first N–1 dims as 'grid.shape[:-1]'
     # Build a ChunkIterator over the live_mask (no sample axis)
     from mdio.core.indexing import ChunkIterator

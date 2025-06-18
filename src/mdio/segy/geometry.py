@@ -202,18 +202,22 @@ def create_counter(
     total_depth: int,
     unique_headers: dict[str, NDArray],
     header_names: list[str],
-) -> dict[str, dict]:
-    """Helper function to create dictionary tree for counting trace key for auto index."""
-    if depth == total_depth:
-        return 0
-
-    counter = {}
-
-    header_key = header_names[depth]
-    for header in unique_headers[header_key]:
-        counter[header] = create_counter(depth + 1, total_depth, unique_headers, header_names)
-
-    return counter
+) -> dict[tuple, int]:
+    """Helper function to create flat counter dictionary for counting trace keys for auto index.
+    
+    This is a memory-efficient version that returns an empty dict since we now process
+    traces directly in create_trace_index without pre-allocating the counter structure.
+    
+    Args:
+        depth: Current recursion depth (unused in new implementation)
+        total_depth: Total depth of headers (unused in new implementation) 
+        unique_headers: Dictionary of unique header values (unused in new implementation)
+        header_names: List of header names (unused in new implementation)
+        
+    Returns:
+        Empty dictionary - actual counting happens in create_trace_index
+    """
+    return {}
 
 
 def create_trace_index(
@@ -223,63 +227,88 @@ def create_trace_index(
     header_names: list[str],
     dtype: DTypeLike = np.int16,
 ) -> NDArray | None:
-    """Update dictionary counter tree for counting trace key for auto index."""
+    """Memory-efficient trace index creation that processes traces in a single pass.
+    
+    Args:
+        depth: Number of header dimensions to process
+        counter: Counter dictionary (unused in new implementation)
+        index_headers: numpy array with index headers
+        header_names: List of header field names
+        dtype: numpy type for value of created trace header
+        
+    Returns:
+        HeaderArray with added 'trace' field containing trace indices, or None if depth is 0
+    """
     if depth == 0:
         # If there's no hierarchical depth, no tracing needed.
         return None
 
-    # Add index header
+    # Add trace field
     trace_no_field = np.zeros(index_headers.shape, dtype=dtype)
     index_headers = rfn.append_fields(index_headers, "trace", trace_no_field, usemask=False)
-
-    # Extract the relevant columns upfront
-    headers = [index_headers[name] for name in header_names[:depth]]
-    for idx, idx_values in enumerate(zip(*headers, strict=True)):
-        if depth == 1:
-            counter[idx_values[0]] += 1
-            index_headers["trace"][idx] = counter[idx_values[0]]
-        else:
-            sub_counter = counter
-            for idx_value in idx_values[:-1]:
-                sub_counter = sub_counter[idx_value]
-            sub_counter[idx_values[-1]] += 1
-            index_headers["trace"][idx] = sub_counter[idx_values[-1]]
-
+    
+    # Use a flat dictionary with tuple keys instead of nested dictionaries
+    # This avoids pre-allocating memory for all possible combinations
+    flat_counter = {}
+    
+    # Only use the first 'depth' header names
+    relevant_header_names = header_names[:depth]
+    
+    # Process each trace in a single pass
+    for idx in range(len(index_headers)):
+        # Create tuple key from header values for this trace
+        key = tuple(index_headers[name][idx] for name in relevant_header_names)
+        
+        # Increment counter for this combination and assign trace number
+        flat_counter[key] = flat_counter.get(key, 0) + 1
+        index_headers["trace"][idx] = flat_counter[key]
+    
     return index_headers
 
 
 def analyze_non_indexed_headers(index_headers: HeaderArray, dtype: DTypeLike = np.int16) -> NDArray:
     """Check input headers for SEG-Y input to help determine geometry.
 
-    This function reads in trace_qc_count headers and finds the unique cable values. Then, it
-    checks to make sure channel numbers for different cables do not overlap.
+    This function reads in trace_qc_count headers and creates trace indices efficiently.
+    Uses a memory-efficient approach that doesn't pre-allocate large nested dictionaries.
 
     Args:
         index_headers: numpy array with index headers
         dtype: numpy type for value of created trace header.
 
     Returns:
-        Dict container header name as key and numpy array of values as value
+        HeaderArray with added 'trace' field containing trace indices
     """
-    # Find unique cable ids
     t_start = time.perf_counter()
-    unique_headers = {}
-    total_depth = 0
-    header_names = []
-    for header_key in index_headers.dtype.names:
-        if header_key != "trace":
-            unique_headers[header_key] = np.sort(np.unique(index_headers[header_key]))
-            header_names.append(header_key)
-            total_depth += 1
-
-    counter = create_counter(0, total_depth, unique_headers, header_names)
-
-    index_headers = create_trace_index(
-        total_depth, counter, index_headers, header_names, dtype=dtype
-    )
-
+    
+    # Get header names excluding 'trace' if it already exists
+    header_names = [name for name in index_headers.dtype.names if name != "trace"]
+    
+    if not header_names:
+        # No headers to process, just add trace numbers sequentially
+        trace_no_field = np.arange(1, len(index_headers) + 1, dtype=dtype)
+        index_headers = rfn.append_fields(index_headers, "trace", trace_no_field, usemask=False)
+        return index_headers
+    
+    # Create trace field
+    trace_no_field = np.zeros(index_headers.shape, dtype=dtype)
+    index_headers = rfn.append_fields(index_headers, "trace", trace_no_field, usemask=False)
+    
+    # Use a flat dictionary with tuple keys instead of nested dictionaries
+    # This avoids pre-allocating memory for all possible combinations
+    counter = {}
+    
+    # Process each trace in a single pass
+    for idx in range(len(index_headers)):
+        # Create tuple key from header values for this trace
+        key = tuple(index_headers[name][idx] for name in header_names)
+        
+        # Increment counter for this combination and assign trace number
+        counter[key] = counter.get(key, 0) + 1
+        index_headers["trace"][idx] = counter[key]
+    
     t_stop = time.perf_counter()
-    logger.debug("Time spent generating trace index: %.4f s", t_start - t_stop)
+    logger.debug("Time spent generating trace index: %.4f s", t_stop - t_start)
     return index_headers
 
 
