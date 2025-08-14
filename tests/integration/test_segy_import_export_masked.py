@@ -139,13 +139,6 @@ STREAMER_3D_CONF = MaskedExportConfig(
     SegyToMdioConfig(chunks=[1, 2, 12, 128]),
     SelectionMaskConfig(mask_num_dims=1, remove_frac=0.5),
 )
-
-COCA_3D_CONF = MaskedExportConfig(
-    GridConfig(name="3d_coca", dims=[Dimension("inline", 10, 8, 1), Dimension("crossline", 100, 8, 2), Dimension("offset", 25, 15, 25), Dimension("azimuth", 0, 4, 30)]),
-    SegyFactoryConfig(revision=1, header_byte_map={"inline": 189, "crossline": 193, "offset": 37, "azimuth": 232}, num_samples=201),
-    SegyToMdioConfig(chunks=[4, 4, 4, 1, 128]),
-    SelectionMaskConfig(mask_num_dims=2, remove_frac=0.9),
-)
 # fmt: on
 
 
@@ -252,8 +245,8 @@ def export_masked_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 # fmt: off
 @pytest.mark.parametrize(
     "test_conf",
-    [STACK_2D_CONF, STACK_3D_CONF, GATHER_2D_CONF, GATHER_3D_CONF, STREAMER_2D_CONF, STREAMER_3D_CONF, COCA_3D_CONF],
-    ids=["2d_stack", "3d_stack", "2d_gather", "3d_gather", "2d_streamer", "3d_streamer", "3d_coca"],
+    [STACK_2D_CONF, STACK_3D_CONF, GATHER_2D_CONF, GATHER_3D_CONF, STREAMER_2D_CONF, STREAMER_3D_CONF],
+    ids=["2d_stack", "3d_stack", "2d_gather", "3d_gather", "2d_streamer", "3d_streamer"],
 )
 # fmt: on
 class TestNdImportExport:

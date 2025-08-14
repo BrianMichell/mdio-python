@@ -119,8 +119,11 @@ def mdio_spec_to_segy(
     spec.endianness = Endianness(output_endian)
     factory = make_segy_factory(ds, spec=spec)
 
-    text_str = attributes["textHeader"]
-    text_bytes = factory.create_textual_header(text_str)
+    text_field = attributes["textHeader"]
+    if isinstance(text_field, list):
+        text_field = "".join(text_field)
+
+    text_bytes = factory.create_textual_header(text_field)
 
     binary_header = revision_encode(attributes["binaryHeader"], mdio_file_version)
     bin_hdr_bytes = factory.create_binary_header(binary_header)
