@@ -13,8 +13,11 @@ from click import option
 from click_params import JSON
 from click_params import IntListParamType
 from click_params import StringListParamType
+from segy.schema import HeaderField
+from segy.standards import get_segy_standard
 
 from mdio.core.storage_location import StorageLocation
+from mdio.schemas.v1.templates.template_registry import TemplateRegistry
 
 SEGY_HELP = """
 MDIO and SEG-Y conversion utilities. Below is general information about the SEG-Y format and MDIO
@@ -320,19 +323,23 @@ def segy_import(  # noqa: PLR0913
     # Lazy import to reduce CLI startup time
     from mdio import segy_to_mdio  # noqa: PLC0415
 
+    _ = (chunk_size, lossless, compression_tolerance, grid_overrides)
+
+    segy_spec = get_segy_standard(1.0)
+    index_names = header_names or [f"dim_{i}" for i in range(len(header_locations))]
+    index_types = header_types or ["int32"] * len(header_locations)
+    index_fields = [
+        HeaderField(name=name, byte=byte, format=format_)
+        for name, byte, format_ in zip(index_names, header_locations, index_types, strict=True)
+    ]
+    segy_spec = segy_spec.customize(trace_header_fields=index_fields)
+
     segy_to_mdio(
-        segy_path=segy_path,
-        mdio_path_or_buffer=mdio_path,
-        index_bytes=header_locations,
-        index_types=header_types,
-        index_names=header_names,
-        chunksize=chunk_size,
-        lossless=lossless,
-        compression_tolerance=compression_tolerance,
-        storage_options_input=storage_options_input,
-        storage_options_output=storage_options_output,
+        segy_spec=segy_spec,
+        mdio_template=TemplateRegistry().get("PostStack3DTime"),
+        input_location=StorageLocation(segy_path, storage_options_input),
+        output_location=StorageLocation(mdio_path, storage_options_output),
         overwrite=overwrite,
-        grid_overrides=grid_overrides,
     )
 
 
