@@ -7,31 +7,70 @@ from dataclasses import dataclass
 from pathlib import Path
 from shutil import copyfileobj
 from typing import TYPE_CHECKING
-from typing import Any
 
 import numpy as np
+import xarray as xr
 from segy.factory import SegyFactory
 from segy.schema import Endianness
 from segy.schema import SegySpec
 from tqdm.auto import tqdm
 
-from mdio.api.accessor import MDIOReader
 from mdio.segy.compat import mdio_segy_spec
 from mdio.segy.compat import revision_encode
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+    from xarray import Dataset as xr_Dataset
+
+    from mdio.core.storage_location import StorageLocation
 
 
 logger = logging.getLogger(__name__)
 
 
-def make_segy_factory(mdio: MDIOReader, spec: SegySpec) -> SegyFactory:
+def get_required_segy_fields(
+    ds: xr_Dataset,
+) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, dict, str]:
+    """Validate that required fields exist in an MDIO dataset.
+
+    Args:
+        ds: Dataset to validate.
+
+    Returns:
+        Tuple containing amplitude, headers, trace_mask variables, attributes dict,
+        and the API version string.
+
+    Raises:
+        KeyError: If any of the required fields are missing.
+    """
+    # TODO (BrianMichell): Define and implement field inference  # noqa: TD003
+    missing = [f"attrs['{attr}']" for attr in ("apiVersion", "attributes") if attr not in ds.attrs]
+
+    attributes = ds.attrs.get("attributes", {})
+    missing.extend(f"attrs['attributes']['{key}']" for key in ("textHeader", "binaryHeader") if key not in attributes)
+
+    missing.extend(var for var in ("amplitude", "headers", "trace_mask") if var not in ds)
+
+    if missing:
+        err = ", ".join(missing)
+        msg = f"Missing required field(s): {err}"
+        raise KeyError(msg)
+
+    return (
+        ds["amplitude"],
+        ds["headers"],
+        ds["trace_mask"],
+        attributes,
+        ds.attrs["apiVersion"],
+    )
+
+
+def make_segy_factory(ds: xr_Dataset, spec: SegySpec) -> SegyFactory:
     """Generate SEG-Y factory from MDIO metadata."""
-    grid = mdio.grid
-    sample_dim = grid.select_dim("sample")
-    sample_interval = sample_dim[1] - sample_dim[0]
-    samples_per_trace = len(sample_dim)
+    sample_dim_name = ds["amplitude"].dims[-1]
+    sample_coord = ds[sample_dim_name].values
+    sample_interval = sample_coord[1] - sample_coord[0]
+    samples_per_trace = len(sample_coord)
 
     return SegyFactory(
         spec=spec,
@@ -40,65 +79,58 @@ def make_segy_factory(mdio: MDIOReader, spec: SegySpec) -> SegyFactory:
     )
 
 
-def mdio_spec_to_segy(  # noqa: PLR0913
-    mdio_path_or_buffer: str,
-    output_segy_path: Path,
-    access_pattern: str,
+def mdio_spec_to_segy(
+    input_location: StorageLocation,
+    output_location: StorageLocation,
     output_endian: str,
-    storage_options: dict[str, Any],
     new_chunks: tuple[int, ...],
     backend: str,
-) -> tuple[MDIOReader, SegyFactory]:
+) -> tuple[xr_Dataset, SegyFactory]:
     """Create SEG-Y file without any traces given MDIO specification.
 
     This function opens an MDIO file, gets some relevant information for SEG-Y files, then creates
     a SEG-Y file with the specification it read from the MDIO file.
 
-    It then returns the `MDIOReader` instance, and the parsed floating point format `sample_format`
-    for further use.
+    It then returns the opened xarray dataset and the parsed floating point format
+    `sample_format` for further use.
 
     Function will attempt to read text, and binary headers, and some grid information from the MDIO
     file. If these don't exist, the process will fail.
 
     Args:
-        mdio_path_or_buffer: Store or URL for MDIO file.
-        output_segy_path: Path to the output SEG-Y file.
-        access_pattern: Chunk access pattern, optional. Default is "012". Examples: '012', '01'.
+        input_location: Location of the MDIO file.
+        output_location: Location of the output SEG-Y file.
         output_endian: Endianness of the output file.
-        storage_options: Options for the storage backend. By default, system-wide credentials
-            will be used.
         new_chunks: Set manual chunksize. For development purposes only.
         backend: Backend selection, optional. Default is "zarr". Must be in {'zarr', 'dask'}.
 
     Returns:
-        Initialized MDIOReader for MDIO file and return SegyFactory
+        Opened xarray Dataset for MDIO file and configured SegyFactory
     """
-    mdio = MDIOReader(
-        mdio_path_or_buffer=mdio_path_or_buffer,
-        access_pattern=access_pattern,
-        storage_options=storage_options,
-        return_metadata=True,
-        new_chunks=new_chunks,
-        backend=backend,
-        disk_cache=False,  # Making sure disk caching is disabled
-    )
+    ds = xr.open_dataset(input_location.uri, engine="zarr", mask_and_scale=False)
 
-    mdio_file_version = mdio.root.attrs["api_version"]
+    amp, _, _, attributes, mdio_file_version = get_required_segy_fields(ds)
+
+    if backend == "dask" and new_chunks is not None:
+        chunk_map = dict(zip(amp.dims, new_chunks, strict=False))
+        ds = ds.chunk(chunk_map)
+
     spec = mdio_segy_spec(mdio_file_version)
     spec.endianness = Endianness(output_endian)
-    factory = make_segy_factory(mdio, spec=spec)
+    factory = make_segy_factory(ds, spec=spec)
 
-    text_str = "\n".join(mdio.text_header)
+    text_str = attributes["textHeader"]
     text_bytes = factory.create_textual_header(text_str)
 
-    binary_header = revision_encode(mdio.binary_header, mdio_file_version)
+    binary_header = revision_encode(attributes["binaryHeader"], mdio_file_version)
     bin_hdr_bytes = factory.create_binary_header(binary_header)
 
-    with output_segy_path.open(mode="wb") as fp:
+    output_path = Path(output_location.uri)
+    with output_path.open(mode="wb") as fp:
         fp.write(text_bytes)
         fp.write(bin_hdr_bytes)
 
-    return mdio, factory
+    return ds, factory
 
 
 @dataclass(slots=True)

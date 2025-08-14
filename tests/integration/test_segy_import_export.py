@@ -20,11 +20,9 @@ from tests.integration.testing_helpers import get_inline_header_values
 from tests.integration.testing_helpers import get_values
 from tests.integration.testing_helpers import validate_variable
 
-from mdio import MDIOReader
 from mdio import mdio_to_segy
 from mdio.converters.exceptions import GridTraceSparsityError
 from mdio.converters.segy import segy_to_mdio
-from mdio.core import Dimension
 from mdio.core.storage_location import StorageLocation
 from mdio.schemas.v1.templates.template_registry import TemplateRegistry
 from mdio.segy.compat import mdio_segy_spec
@@ -75,15 +73,15 @@ class TestImport4DNonReg:
         receivers_per_cable = [1, 5, 7, 5]
 
         # QC mdio output
-        mdio = MDIOReader(zarr_tmp.__str__(), access_pattern="0123")
-        assert mdio.binary_header["samples_per_trace"] == num_samples
-        grid = mdio.grid
+        ds = xr.open_dataset(zarr_tmp, engine="zarr", mask_and_scale=False)
+        attrs = ds.attrs["attributes"]
+        assert attrs["binaryHeader"]["samples_per_trace"] == num_samples
 
-        assert grid.select_dim(index_names[0]) == Dimension(shots, index_names[0])
-        assert grid.select_dim(index_names[1]) == Dimension(cables, index_names[1])
-        assert grid.select_dim("trace") == Dimension(range(1, np.amax(receivers_per_cable) + 1), "trace")
-        samples_exp = Dimension(range(0, num_samples, 1), "sample")
-        assert grid.select_dim("sample") == samples_exp
+        assert list(ds[index_names[0]].values) == shots
+        assert list(ds[index_names[1]].values) == cables
+        assert list(ds["trace"].values) == list(range(1, np.amax(receivers_per_cable) + 1))
+        sample_dim = ds["amplitude"].dims[-1]
+        assert list(ds[sample_dim].values) == list(range(0, num_samples, 1))
 
 
 @pytest.mark.parametrize("index_bytes", [(17, 137, 13)])
@@ -125,24 +123,20 @@ class TestImport4D:
         receivers_per_cable = [1, 5, 7, 5]
 
         # QC mdio output
-        mdio = MDIOReader(zarr_tmp.__str__(), access_pattern="0123")
-        assert mdio.binary_header["samples_per_trace"] == num_samples
-        grid = mdio.grid
+        ds = xr.open_dataset(zarr_tmp, engine="zarr", mask_and_scale=False)
+        attrs = ds.attrs["attributes"]
+        assert attrs["binaryHeader"]["samples_per_trace"] == num_samples
 
-        assert grid.select_dim(index_names[0]) == Dimension(shots, index_names[0])
-        assert grid.select_dim(index_names[1]) == Dimension(cables, index_names[1])
+        assert list(ds[index_names[0]].values) == shots
+        assert list(ds[index_names[1]].values) == cables
 
         if chan_header_type == StreamerShotGeometryType.B and grid_overrides is None:
-            assert grid.select_dim(index_names[2]) == Dimension(
-                range(1, np.sum(receivers_per_cable) + 1), index_names[2]
-            )
+            assert list(ds[index_names[2]].values) == list(range(1, np.sum(receivers_per_cable) + 1))
         else:
-            assert grid.select_dim(index_names[2]) == Dimension(
-                range(1, np.amax(receivers_per_cable) + 1), index_names[2]
-            )
+            assert list(ds[index_names[2]].values) == list(range(1, np.amax(receivers_per_cable) + 1))
 
-        samples_exp = Dimension(range(0, num_samples, 1), "sample")
-        assert grid.select_dim("sample") == samples_exp
+        sample_dim = ds["amplitude"].dims[-1]
+        assert list(ds[sample_dim].values) == list(range(0, num_samples, 1))
 
 
 @pytest.mark.parametrize("index_bytes", [(17, 137, 13)])
@@ -224,25 +218,21 @@ class TestImport6D:
         receivers_per_cable = [1, 5, 7, 5]
 
         # QC mdio output
-        mdio = MDIOReader(zarr_tmp.__str__(), access_pattern="012345")
-        assert mdio.binary_header["samples_per_trace"] == num_samples
-        grid = mdio.grid
+        ds = xr.open_dataset(zarr_tmp, engine="zarr", mask_and_scale=False)
+        attrs = ds.attrs["attributes"]
+        assert attrs["binaryHeader"]["samples_per_trace"] == num_samples
 
-        assert grid.select_dim(index_names[1]) == Dimension(guns, index_names[1])
-        assert grid.select_dim(index_names[2]) == Dimension(shots, index_names[2])
-        assert grid.select_dim(index_names[3]) == Dimension(cables, index_names[3])
+        assert list(ds[index_names[1]].values) == guns
+        assert list(ds[index_names[2]].values) == shots
+        assert list(ds[index_names[3]].values) == cables
 
         if chan_header_type == StreamerShotGeometryType.B and grid_overrides is None:
-            assert grid.select_dim(index_names[4]) == Dimension(
-                range(1, np.sum(receivers_per_cable) + 1), index_names[4]
-            )
+            assert list(ds[index_names[4]].values) == list(range(1, np.sum(receivers_per_cable) + 1))
         else:
-            assert grid.select_dim(index_names[4]) == Dimension(
-                range(1, np.amax(receivers_per_cable) + 1), index_names[4]
-            )
+            assert list(ds[index_names[4]].values) == list(range(1, np.amax(receivers_per_cable) + 1))
 
-        samples_exp = Dimension(range(0, num_samples, 1), "sample")
-        assert grid.select_dim("sample") == samples_exp
+        sample_dim = ds["amplitude"].dims[-1]
+        assert list(ds[sample_dim].values) == list(range(0, num_samples, 1))
 
 
 @pytest.mark.dependency
@@ -410,8 +400,8 @@ class TestExport:
     def test_3d_export(self, zarr_tmp: Path, segy_export_tmp: Path) -> None:
         """Test 3D export to IBM and IEEE."""
         mdio_to_segy(
-            mdio_path_or_buffer=zarr_tmp.__str__(),
-            output_segy_path=segy_export_tmp.__str__(),
+            input_location=StorageLocation(zarr_tmp.__str__()),
+            output_location=StorageLocation(segy_export_tmp.__str__()),
         )
 
     def test_size_equal(self, segy_input: Path, segy_export_tmp: Path) -> None:

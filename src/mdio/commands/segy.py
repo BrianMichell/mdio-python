@@ -14,6 +14,8 @@ from click_params import JSON
 from click_params import IntListParamType
 from click_params import StringListParamType
 
+from mdio.core.storage_location import StorageLocation
+
 SEGY_HELP = """
 MDIO and SEG-Y conversion utilities. Below is general information about the SEG-Y format and MDIO
 features. For import or export specific functionality check the import or export modules:
@@ -338,15 +340,6 @@ def segy_import(  # noqa: PLR0913
 @argument("mdio-file", type=STRING)
 @argument("segy-path", type=Path(exists=False))
 @option(
-    "-access",
-    "--access-pattern",
-    required=False,
-    default="012",
-    help="Access pattern of the file",
-    type=STRING,
-    show_default=True,
-)
-@option(
     "-storage",
     "--storage-options",
     required=False,
@@ -366,7 +359,6 @@ def segy_import(  # noqa: PLR0913
 def segy_export(
     mdio_file: str,
     segy_path: str,
-    access_pattern: str,
     storage_options: dict[str, Any],
     endian: str,
 ) -> None:
@@ -391,9 +383,7 @@ def segy_export(
     from mdio import mdio_to_segy  # noqa: PLC0415
 
     mdio_to_segy(
-        mdio_path_or_buffer=mdio_file,
-        output_segy_path=segy_path,
-        access_pattern=access_pattern,
-        storage_options=storage_options,
+        input_location=StorageLocation(mdio_file, storage_options),
+        output_location=StorageLocation(str(segy_path)),
         endian=endian,
     )

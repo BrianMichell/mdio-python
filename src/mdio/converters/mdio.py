@@ -5,16 +5,21 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING
 
 import numpy as np
+import xarray as xr
 from psutil import cpu_count
 from tqdm.dask import TqdmCallback
 
-from mdio import MDIOReader
 from mdio.segy.blocked_io import to_segy
 from mdio.segy.creation import concat_files
+from mdio.segy.creation import get_required_segy_fields
 from mdio.segy.creation import mdio_spec_to_segy
 from mdio.segy.utilities import segy_export_rechunker
+
+if TYPE_CHECKING:
+    from mdio.core.storage_location import StorageLocation
 
 try:
     import distributed
@@ -26,15 +31,15 @@ default_cpus = cpu_count(logical=True)
 NUM_CPUS = int(os.getenv("MDIO__EXPORT__CPU_COUNT", default_cpus))
 
 
-def mdio_to_segy(  # noqa: PLR0912, PLR0913
-    mdio_path_or_buffer: str,
-    output_segy_path: str,
+def mdio_to_segy(  # noqa: PLR0912, PLR0913, PLR0915
+    input_location: StorageLocation,
+    output_location: StorageLocation,
+    *,
     endian: str = "big",
-    access_pattern: str = "012",
-    storage_options: dict = None,
     new_chunks: tuple[int, ...] = None,
     selection_mask: np.ndarray = None,
     client: distributed.Client = None,
+    overwrite: bool = False,
 ) -> None:
     """Convert MDIO file to SEG-Y format.
 
@@ -47,20 +52,19 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
     A `selection_mask` can be provided (same shape as spatial grid) to export a subset.
 
     Args:
-        mdio_path_or_buffer: Input path where the MDIO is located.
-        output_segy_path: Path to the output SEG-Y file.
-        endian: Endianness of the input SEG-Y. Rev.2 allows little endian. Default is 'big'.
-        access_pattern: This specificies the chunk access pattern. Underlying zarr.Array must
-            exist. Examples: '012', '01'
-        storage_options: Storage options for the cloud storage backend. Default: None (anonymous)
+        input_location: Location of the input MDIO file.
+        output_location: Location of the output SEG-Y file.
+        endian: Endianness of the output SEG-Y. Rev.2 allows little endian. Default is "big".
         new_chunks: Set manual chunksize. For development purposes only.
-        selection_mask: Array that lists the subset of traces
+        selection_mask: Array that lists the subset of traces.
         client: Dask client. If `None` we will use local threaded scheduler. If `auto` is used we
             will create multiple processes (with 8 threads each).
+        overwrite: Whether to overwrite the SEG-Y file if it already exists.
 
     Raises:
-        ImportError: if distributed package isn't installed but requested.
-        ValueError: if cut mask is empty, i.e. no traces will be written.
+        FileExistsError: If the output location already exists and `overwrite` is False.
+        ImportError: If distributed package isn't installed but requested.
+        ValueError: If cut mask is empty, i.e. no traces will be written.
 
     Examples:
         To export an existing local MDIO file to SEG-Y we use the code snippet below. This will
@@ -69,40 +73,41 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
 
         >>> from mdio import mdio_to_segy
         >>>
-        >>>
         >>> mdio_to_segy(
-        ...     mdio_path_or_buffer="prefix2/file.mdio",
-        ...     output_segy_path="prefix/file.segy",
+        ...     input_location=StorageLocation("prefix2/file.mdio"),
+        ...     output_location=StorageLocation("prefix/file.segy"),
         ... )
 
         If we want to export this as an IEEE big-endian, using a selection mask, we would run:
 
         >>> mdio_to_segy(
-        ...     mdio_path_or_buffer="prefix2/file.mdio",
-        ...     output_segy_path="prefix/file.segy",
+        ...     input_location=StorageLocation("prefix2/file.mdio"),
+        ...     output_location=StorageLocation("prefix/file.segy"),
         ...     selection_mask=boolean_mask,
         ... )
 
     """
     backend = "dask"
 
-    output_segy_path = Path(output_segy_path)
+    if not overwrite and output_location.exists():
+        err = f"Output location '{output_location.uri}' exists. Set `overwrite=True` if intended."
+        raise FileExistsError(err)
 
-    mdio = MDIOReader(
-        mdio_path_or_buffer=mdio_path_or_buffer,
-        access_pattern=access_pattern,
-        storage_options=storage_options,
-    )
+    output_segy_path = Path(output_location.uri)
 
     if new_chunks is None:
-        new_chunks = segy_export_rechunker(mdio.chunks, mdio.shape, mdio._traces.dtype)
+        ds_tmp = xr.open_dataset(input_location.uri, engine="zarr", mask_and_scale=False)
+        amp = ds_tmp["amplitude"]
+        chunks = amp.encoding.get("chunks")
+        shape = amp.shape
+        dtype = amp.dtype
+        new_chunks = segy_export_rechunker(chunks, shape, dtype)
+        ds_tmp.close()
 
     creation_args = [
-        mdio_path_or_buffer,
-        output_segy_path,
-        access_pattern,
+        input_location,
+        output_location,
         endian,
-        storage_options,
         new_chunks,
         backend,
     ]
@@ -111,14 +116,16 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
         if distributed is not None:
             # This is in case we work with big data
             feature = client.submit(mdio_spec_to_segy, *creation_args)
-            mdio, segy_factory = feature.result()
+            ds, segy_factory = feature.result()
         else:
             msg = "Distributed client was provided, but `distributed` is not installed"
             raise ImportError(msg)
     else:
-        mdio, segy_factory = mdio_spec_to_segy(*creation_args)
+        ds, segy_factory = mdio_spec_to_segy(*creation_args)
 
-    live_mask = mdio.live_mask.compute()
+    amp_da, headers_da, trace_mask_da, _, _ = get_required_segy_fields(ds)
+
+    live_mask = trace_mask_da.data.compute()
 
     if selection_mask is not None:
         live_mask = live_mask & selection_mask
@@ -138,12 +145,18 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
         dim_slices += (slice(start, stop),)
 
     # Lazily pull the data with limits now, and limit mask so its the same shape.
-    live_mask, headers, samples = mdio[dim_slices]
-    live_mask = live_mask.rechunk(headers.chunks)
+    trace_mask_da = trace_mask_da.data
+    headers = headers_da.data
+    samples = amp_da.data
+
+    live_mask_da = trace_mask_da[dim_slices]
+    headers = headers[dim_slices]
+    samples = samples[dim_slices]
+    live_mask_da = live_mask_da.rechunk(headers.chunks)
 
     if selection_mask is not None:
         selection_mask = selection_mask[dim_slices]
-        live_mask = live_mask & selection_mask
+        live_mask_da = live_mask_da & selection_mask
 
     # tmp file root
     out_dir = output_segy_path.parent
@@ -154,7 +167,7 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913
             block_records = to_segy(
                 samples=samples,
                 headers=headers,
-                live_mask=live_mask,
+                live_mask=live_mask_da,
                 segy_factory=segy_factory,
                 file_root=tmp_dir.name,
             )

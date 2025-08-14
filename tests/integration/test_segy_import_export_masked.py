@@ -22,7 +22,6 @@ from segy.schema import HeaderField
 from segy.schema import SegySpec
 from segy.standards import get_segy_standard
 
-from mdio import MDIOReader
 from mdio import mdio_to_segy
 from mdio.converters.segy import segy_to_mdio
 from mdio.core.storage_location import StorageLocation
@@ -360,17 +359,14 @@ class TestNdImportExport:
         mdio_path = export_masked_path / f"{grid_conf.name}.mdio"
         segy_rt_path = export_masked_path / f"{grid_conf.name}_rt.sgy"
 
-        index_names = segy_factory_conf.header_byte_map.keys()
-        access_pattern = "".join(map(str, range(len(index_names) + 1)))
-        mdio = MDIOReader(mdio_path.__str__(), access_pattern=access_pattern)
-
-        chunks, shape = mdio.chunks, mdio.shape
+        ds = xr.open_dataset(mdio_path, engine="zarr", mask_and_scale=False)
+        amp = ds["amplitude"]
+        chunks, shape = amp.encoding.get("chunks"), amp.shape
         new_chunks = segy_export_rechunker(chunks, shape, dtype="float32", limit="0.3M")
 
         mdio_to_segy(
-            mdio_path.__str__(),
-            segy_rt_path.__str__(),
-            access_pattern=access_pattern,
+            input_location=StorageLocation(mdio_path.__str__()),
+            output_location=StorageLocation(segy_rt_path.__str__()),
             new_chunks=new_chunks,
         )
 
@@ -386,18 +382,16 @@ class TestNdImportExport:
         mdio_path = export_masked_path / f"{grid_conf.name}.mdio"
         segy_rt_path = export_masked_path / f"{grid_conf.name}_rt.sgy"
 
-        index_names = segy_factory_conf.header_byte_map.keys()
-        access_pattern = "".join(map(str, range(len(index_names) + 1)))
-        mdio = MDIOReader(mdio_path.__str__(), access_pattern=access_pattern)
+        ds = xr.open_dataset(mdio_path, engine="zarr", mask_and_scale=False)
+        amp = ds["amplitude"]
         export_chunks = segy_export_rechunker(
-            mdio.chunks, mdio.shape, dtype="float32", limit="0.3M"
+            amp.encoding.get("chunks"), amp.shape, dtype="float32", limit="0.3M"
         )
         selection_mask = generate_selection_mask(selection_conf, grid_conf)
 
         mdio_to_segy(
-            mdio_path.__str__(),
-            segy_rt_path.__str__(),
-            access_pattern=access_pattern,
+            input_location=StorageLocation(mdio_path.__str__()),
+            output_location=StorageLocation(segy_rt_path.__str__()),
             new_chunks=export_chunks,
             selection_mask=selection_mask,
         )
