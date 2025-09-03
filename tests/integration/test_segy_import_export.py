@@ -57,15 +57,22 @@ class TestImport4DNonReg:
         """Test importing a SEG-Y file to MDIO."""
         segy_path = segy_mock_4d_shots[chan_header_type]
 
-        segy_to_mdio(
-            segy_path=segy_path,
-            mdio_path_or_buffer=zarr_tmp.__str__(),
+        _ = grid_overrides
+
+        segy_spec = get_segy_standard(1.0)
+        segy_spec = customize_segy_specs(
+            segy_spec=segy_spec,
             index_bytes=index_bytes,
             index_names=index_names,
             index_types=index_types,
-            chunksize=(8, 2, 10),
+        )
+
+        segy_to_mdio(
+            segy_spec=segy_spec,
+            mdio_template=TemplateRegistry().get("PreStackShotGathers3DTime"),
+            input_location=StorageLocation(str(segy_path)),
+            output_location=StorageLocation(str(zarr_tmp)),
             overwrite=True,
-            grid_overrides=grid_overrides,
         )
 
         # Expected values
@@ -107,15 +114,20 @@ class TestImport4D:
         """Test importing a SEG-Y file to MDIO."""
         segy_path = segy_mock_4d_shots[chan_header_type]
 
-        segy_to_mdio(
-            segy_path=segy_path,
-            mdio_path_or_buffer=zarr_tmp.__str__(),
+        segy_spec = get_segy_standard(1.0)
+        segy_spec = customize_segy_specs(
+            segy_spec=segy_spec,
             index_bytes=index_bytes,
             index_names=index_names,
             index_types=index_types,
-            chunksize=(8, 2, 128, 1024),
+        )
+
+        segy_to_mdio(
+            segy_spec=segy_spec,
+            mdio_template=TemplateRegistry().get("PreStackShotGathers3DTime"),
+            input_location=StorageLocation(str(segy_path)),
+            output_location=StorageLocation(str(zarr_tmp)),
             overwrite=True,
-            grid_overrides=grid_overrides,
         )
 
         # Expected values
@@ -165,14 +177,20 @@ class TestImport4DSparse:
         segy_path = segy_mock_4d_shots[chan_header_type]
         os.environ["MDIO__GRID__SPARSITY_RATIO_LIMIT"] = "1.1"
 
+        segy_spec = get_segy_standard(1.0)
+        segy_spec = customize_segy_specs(
+            segy_spec=segy_spec,
+            index_bytes=index_bytes,
+            index_names=index_names,
+            index_types=index_types,
+        )
+
         with pytest.raises(GridTraceSparsityError) as execinfo:
             segy_to_mdio(
-                segy_path=segy_path,
-                mdio_path_or_buffer=zarr_tmp.__str__(),
-                index_bytes=index_bytes,
-                index_names=index_names,
-                index_types=index_types,
-                chunksize=(8, 2, 128, 1024),
+                segy_spec=segy_spec,
+                mdio_template=TemplateRegistry().get("PreStackShotGathers3DTime"),
+                input_location=StorageLocation(str(segy_path)),
+                output_location=StorageLocation(str(zarr_tmp)),
                 overwrite=True,
             )
 
@@ -201,15 +219,20 @@ class TestImport6D:
         """Test importing a SEG-Y file to MDIO."""
         segy_path = segy_mock_4d_shots[chan_header_type]
 
-        segy_to_mdio(
-            segy_path=segy_path,
-            mdio_path_or_buffer=zarr_tmp.__str__(),
+        segy_spec = get_segy_standard(1.0)
+        segy_spec = customize_segy_specs(
+            segy_spec=segy_spec,
             index_bytes=index_bytes,
             index_names=index_names,
             index_types=index_types,
-            chunksize=(1, 1, 8, 1, 12, 36),
+        )
+
+        segy_to_mdio(
+            segy_spec=segy_spec,
+            mdio_template=TemplateRegistry().get("PreStackShotGathers3DTime"),
+            input_location=StorageLocation(str(segy_path)),
+            output_location=StorageLocation(str(zarr_tmp)),
             overwrite=True,
-            grid_overrides=grid_overrides,
         )
 
         # Expected values
@@ -410,8 +433,8 @@ class TestExport:
     def test_3d_export(self, zarr_tmp: Path, segy_export_tmp: Path) -> None:
         """Test 3D export to IBM and IEEE."""
         mdio_to_segy(
-            mdio_path_or_buffer=zarr_tmp.__str__(),
-            output_segy_path=segy_export_tmp.__str__(),
+            input_location=StorageLocation(zarr_tmp.__str__()),
+            output_location=StorageLocation(segy_export_tmp.__str__()),
         )
 
     def test_size_equal(self, segy_input: Path, segy_export_tmp: Path) -> None:

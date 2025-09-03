@@ -368,9 +368,8 @@ class TestNdImportExport:
         new_chunks = segy_export_rechunker(chunks, shape, dtype="float32", limit="0.3M")
 
         mdio_to_segy(
-            mdio_path.__str__(),
-            segy_rt_path.__str__(),
-            access_pattern=access_pattern,
+            input_location=StorageLocation(mdio_path.__str__()),
+            output_location=StorageLocation(segy_rt_path.__str__()),
             new_chunks=new_chunks,
         )
 
@@ -395,9 +394,8 @@ class TestNdImportExport:
         selection_mask = generate_selection_mask(selection_conf, grid_conf)
 
         mdio_to_segy(
-            mdio_path.__str__(),
-            segy_rt_path.__str__(),
-            access_pattern=access_pattern,
+            input_location=StorageLocation(mdio_path.__str__()),
+            output_location=StorageLocation(segy_rt_path.__str__()),
             new_chunks=export_chunks,
             selection_mask=selection_mask,
         )
