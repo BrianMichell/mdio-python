@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import multiprocessing as mp
 import os
-from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures import as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -80,37 +77,20 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     chunk_iter = ChunkIterator(shape=data.shape, chunks=worker_chunks, dim_names=data.dims)
     num_chunks = chunk_iter.num_chunks
 
-    # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
-    # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
-    num_cpus = int(os.getenv("MDIO__IMPORT__CPU_COUNT", default_cpus))
-    num_workers = min(num_chunks, num_cpus)
-    context = mp.get_context("spawn")
-    executor = ProcessPoolExecutor(max_workers=num_workers, mp_context=context)
-
     segy_kw = {
         "url": segy_file.fs.unstrip_protocol(segy_file.url),
         "spec": segy_file.spec,
         "settings": segy_file.settings,
     }
-    with executor:
-        futures = []
-        common_args = (segy_kw, output_path, data_variable_name)
-        for region in chunk_iter:
-            subset_args = (region, grid_map, dataset.isel(region))
-            future = executor.submit(trace_worker, *common_args, *subset_args)
-            futures.append(future)
 
-        iterable = tqdm(
-            as_completed(futures),
-            total=num_chunks,
-            unit="block",
-            desc="Ingesting traces",
-        )
+    common_args = (segy_kw, output_path, data_variable_name)
 
-        for future in iterable:
-            result = future.result()
-            if result is not None:
-                _update_stats(final_stats, result)
+    # Execute trace_worker serially for profiling
+    for region in tqdm(chunk_iter, total=num_chunks, unit="block", desc="Ingesting traces"):
+        subset_args = (region, grid_map, dataset.isel(region))
+        result = trace_worker(*common_args, *subset_args)
+        if result is not None:
+            _update_stats(final_stats, result)
 
     # Xarray doesn't directly support incremental attribute updates when appending to an existing Zarr store.
     # HACK: We will update the array attribute using zarr's API directly.

@@ -13,6 +13,7 @@ from segy.indexing import merge_cat_file
 
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.dtype import ScalarType
+from mdio.segy._disaster_recovery_wrapper import get_header_raw_and_transformed
 
 if TYPE_CHECKING:
     from segy.arrays import HeaderArray
@@ -81,7 +82,7 @@ def header_scan_worker(
 
     return cast("HeaderArray", trace_header)
 
-
+@profile
 def trace_worker(  # noqa: PLR0913
     segy_kw: SegyFileArguments,
     output_path: UPath,
@@ -134,12 +135,13 @@ def trace_worker(  # noqa: PLR0913
         worker_variables.append(raw_header_key)
 
     ds_to_write = dataset[worker_variables]
+    raw_headers, transformed_headers = get_header_raw_and_transformed(segy_file, live_trace_indexes)
 
     if header_key in worker_variables:
         # Create temporary array for headers with the correct shape
         # TODO(BrianMichell): Implement this better so that we can enable fill values without changing the code. #noqa: TD003
         tmp_headers = np.zeros_like(dataset[header_key])
-        tmp_headers[not_null] = traces.header
+        tmp_headers[not_null] = transformed_headers
         # Create a new Variable object to avoid copying the temporary array
         # The ideal solution is to use `ds_to_write[header_key][:] = tmp_headers`
         # but Xarray appears to be copying memory instead of doing direct assignment.
@@ -150,40 +152,17 @@ def trace_worker(  # noqa: PLR0913
             attrs=ds_to_write[header_key].attrs,
             encoding=ds_to_write[header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
+        del transformed_headers  # Manage memory
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-
-        # Get the indices where we need to place results
-        live_mask = not_null
-        live_positions = np.where(live_mask.ravel())[0]
-
-        if len(live_positions) > 0:
-            # Calculate byte ranges for headers
-            header_size = 240
-            trace_offset = segy_file.spec.trace.offset
-            trace_itemsize = segy_file.spec.trace.itemsize
-
-            starts = []
-            ends = []
-            for global_trace_idx in live_trace_indexes:
-                header_start = trace_offset + global_trace_idx * trace_itemsize
-                header_end = header_start + header_size
-                starts.append(header_start)
-                ends.append(header_end)
-
-            # Capture raw bytes
-            raw_header_bytes = merge_cat_file(segy_file.fs, segy_file.url, starts, ends)
-
-            # Convert and place results
-            raw_headers_array = np.frombuffer(bytes(raw_header_bytes), dtype="|V240")
-            tmp_raw_headers.ravel()[live_positions] = raw_headers_array
-
+        tmp_raw_headers[not_null] = raw_headers.view("|V240")
         ds_to_write[raw_header_key] = Variable(
             ds_to_write[raw_header_key].dims,
             tmp_raw_headers,
             attrs=ds_to_write[raw_header_key].attrs,
-            encoding=ds_to_write[raw_header_key].encoding,
+            encoding=ds_to_write[raw_header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
+        del raw_headers  # Manage memory
 
     data_variable = ds_to_write[data_variable_name]
     fill_value = _get_fill_value(ScalarType(data_variable.dtype.name))
