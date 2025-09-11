@@ -9,7 +9,6 @@ from typing import cast
 
 import numpy as np
 from segy import SegyFile
-from segy.indexing import merge_cat_file
 
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.dtype import ScalarType
@@ -121,10 +120,12 @@ def trace_worker(  # noqa: PLR0913
     zarr_config.set({"threading.max_workers": 1})
 
     live_trace_indexes = local_grid_map[not_null].tolist()
-    raw_headers, transformed_headers, traces = get_header_raw_and_transformed(segy_file, live_trace_indexes)
 
     header_key = "headers"
     raw_header_key = "raw_headers"
+
+    # Used to disable the reverse transforms if we aren't going to write the raw headers
+    do_reverse_transforms = False
 
     # Get subset of the dataset that has not yet been saved
     # The headers might not be present in the dataset
@@ -132,8 +133,10 @@ def trace_worker(  # noqa: PLR0913
     if header_key in dataset.data_vars:  # Keeping the `if` here to allow for more worker configurations
         worker_variables.append(header_key)
     if raw_header_key in dataset.data_vars:
+        do_reverse_transforms = True
         worker_variables.append(raw_header_key)
 
+    raw_headers, transformed_headers, traces = get_header_raw_and_transformed(segy_file, live_trace_indexes, do_reverse_transforms=do_reverse_transforms)
     ds_to_write = dataset[worker_variables]
 
     if header_key in worker_variables:

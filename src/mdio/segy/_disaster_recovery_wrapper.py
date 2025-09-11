@@ -37,8 +37,9 @@ def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
 
 def get_header_raw_and_transformed(
     segy_file: SegyFile,
-    indices: int | list[int] | NDArray | slice
-) -> tuple[NDArray, NDArray, NDArray]:
+    indices: int | list[int] | NDArray | slice,
+    do_reverse_transforms: bool = True
+) -> tuple[NDArray | None, NDArray, NDArray]:
     """Get both raw and transformed header data.
 
     Args:
@@ -53,7 +54,10 @@ def get_header_raw_and_transformed(
     transformed_headers = traces.header
 
     # Reverse transforms to get raw data
-    raw_headers = _reverse_transforms(transformed_headers, segy_file.header.transform_pipeline)
+    if do_reverse_transforms:
+        raw_headers = _reverse_transforms(transformed_headers, segy_file.header.transform_pipeline)
+    else:
+        raw_headers = None
 
     return raw_headers, transformed_headers, traces
 
