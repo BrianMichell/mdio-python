@@ -121,7 +121,6 @@ def trace_worker(  # noqa: PLR0913
     zarr_config.set({"threading.max_workers": 1})
 
     live_trace_indexes = local_grid_map[not_null].tolist()
-    # traces = segy_file.trace[live_trace_indexes]
     raw_headers, transformed_headers, traces = get_header_raw_and_transformed(segy_file, live_trace_indexes)
 
     header_key = "headers"
@@ -136,14 +135,11 @@ def trace_worker(  # noqa: PLR0913
         worker_variables.append(raw_header_key)
 
     ds_to_write = dataset[worker_variables]
-    # raw_headers, transformed_headers = get_header_raw_and_transformed(segy_file, live_trace_indexes)
 
     if header_key in worker_variables:
         # Create temporary array for headers with the correct shape
-        # TODO(BrianMichell): Implement this better so that we can enable fill values without changing the code. #noqa: TD003
         tmp_headers = np.zeros_like(dataset[header_key])
         tmp_headers[not_null] = transformed_headers
-        # tmp_headers[not_null] = traces.header
         # Create a new Variable object to avoid copying the temporary array
         # The ideal solution is to use `ds_to_write[header_key][:] = tmp_headers`
         # but Xarray appears to be copying memory instead of doing direct assignment.
