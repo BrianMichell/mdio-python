@@ -82,7 +82,7 @@ def header_scan_worker(
 
     return cast("HeaderArray", trace_header)
 
-@profile
+# @profile
 def trace_worker(  # noqa: PLR0913
     segy_kw: SegyFileArguments,
     output_path: UPath,
@@ -142,6 +142,7 @@ def trace_worker(  # noqa: PLR0913
         # TODO(BrianMichell): Implement this better so that we can enable fill values without changing the code. #noqa: TD003
         tmp_headers = np.zeros_like(dataset[header_key])
         tmp_headers[not_null] = transformed_headers
+        # tmp_headers[not_null] = traces.header
         # Create a new Variable object to avoid copying the temporary array
         # The ideal solution is to use `ds_to_write[header_key][:] = tmp_headers`
         # but Xarray appears to be copying memory instead of doing direct assignment.
@@ -152,7 +153,7 @@ def trace_worker(  # noqa: PLR0913
             attrs=ds_to_write[header_key].attrs,
             encoding=ds_to_write[header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
-        del transformed_headers  # Manage memory
+        # del transformed_headers  # Manage memory
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
         tmp_raw_headers[not_null] = raw_headers.view("|V240")

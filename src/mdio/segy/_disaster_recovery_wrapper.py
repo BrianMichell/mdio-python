@@ -14,28 +14,6 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 
-def debug_compare_raw_vs_processed(segy_file, trace_index=0):
-    """Debug function to compare raw filesystem data vs processed data."""
-    from segy.indexing import HeaderIndexer
-
-    # Create a fresh indexer to get raw data
-    indexer = HeaderIndexer(
-        segy_file.fs,
-        segy_file.url,
-        segy_file.spec.trace,
-        segy_file.num_traces,
-        transform_pipeline=None  # No transforms = raw data
-    )
-
-    # Get raw data directly from filesystem
-    raw_data = indexer[trace_index]
-
-    # Get processed data with transforms
-    processed_data = segy_file.header[trace_index]
-
-    return raw_data, processed_data
-
-
 class HeaderRawTransformedAccessor:
     """Utility class to access both raw and transformed header data with single filesystem read.
 
@@ -57,28 +35,7 @@ class HeaderRawTransformedAccessor:
             segy_file: The SegyFile instance to work with
         """
         self.segy_file = segy_file
-        self.header_indexer = segy_file.header
-        self.transform_pipeline = self.header_indexer.transform_pipeline
-
-    def get_raw_and_transformed(
-        self, indices: int | list[int] | np.ndarray | slice
-    ) -> tuple[NDArray, NDArray]:
-        """Get both raw and transformed header data with single filesystem read.
-
-        Args:
-            indices: Which headers to retrieve (int, list, ndarray, or slice)
-
-        Returns:
-            Tuple of (raw_headers, transformed_headers)
-        """
-        # Get the transformed data using the normal API
-        # This reads from filesystem and applies transforms
-        transformed_data = self.header_indexer[indices]
-
-        # Now reverse the transforms to get back to raw data
-        raw_data = self._reverse_transforms(transformed_data)
-
-        return raw_data, transformed_data
+        self.transform_pipeline = self.segy_file.header.transform_pipeline
 
     def _reverse_transforms(self, transformed_data: NDArray) -> NDArray:
         """Reverse the transform pipeline to get raw data from transformed data.
@@ -95,52 +52,51 @@ class HeaderRawTransformedAccessor:
 
         # Apply transforms in reverse order with reversed operations
         for i, transform in enumerate(reversed(self.transform_pipeline.transforms)):
-            raw_data = self._reverse_single_transform(raw_data, transform)
+            raw_data = _reverse_single_transform(raw_data, transform)
 
         return raw_data
 
-    def _reverse_single_transform(self, data: NDArray, transform: Transform) -> NDArray:
-        """Reverse a single transform operation.
+@profile
+def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
+    """Reverse a single transform operation.
 
-        Args:
-            data: The data to reverse transform
-            transform: The transform to reverse
+    Args:
+        data: The data to reverse transform
+        transform: The transform to reverse
 
-        Returns:
-            Data with the transform reversed
-        """
-        # Import here to avoid circular imports
-        from segy.transforms import get_endianness
-        from segy.schema import Endianness
+    Returns:
+        Data with the transform reversed
+    """
+    # Import here to avoid circular imports
+    from segy.transforms import get_endianness
+    from segy.schema import Endianness
 
-        if isinstance(transform, ByteSwapTransform):
-            # For byte swap, we need to reverse the endianness conversion
-            # If the transform was converting to little-endian, we need to convert back to big-endian
+    if isinstance(transform, ByteSwapTransform):
+        # For byte swap, we need to reverse the endianness conversion
+        # If the transform was converting to little-endian, we need to convert back to big-endian
 
-            # Get current data endianness
-            current_endianness = get_endianness(data)
-
-            # If transform was converting TO little-endian, we need to convert TO big-endian
-            if transform.target_order == Endianness.LITTLE:
-                reverse_target = Endianness.BIG
-            else:
-                reverse_target = Endianness.LITTLE
-
-            reverse_transform = ByteSwapTransform(reverse_target)
-            result = reverse_transform.apply(data)
-
-            return result
-
-        elif isinstance(transform, IbmFloatTransform):
-            # Reverse IBM float conversion by swapping direction
-            reverse_direction = "to_ibm" if transform.direction == "to_ieee" else "to_ieee"
-            reverse_transform = IbmFloatTransform(reverse_direction, transform.keys)
-            return reverse_transform.apply(data)
-
+        # If transform was converting TO little-endian, we need to convert TO big-endian
+        # TODO: I don't think this is correct
+        if transform.target_order == Endianness.LITTLE:
+            reverse_target = Endianness.BIG
         else:
-            # For unknown transforms, return data unchanged
-            # This maintains compatibility if new transforms are added
-            return data
+            reverse_target = Endianness.LITTLE
+
+        reverse_transform = ByteSwapTransform(reverse_target)
+        result = reverse_transform.apply(data)
+
+        return result
+
+    elif isinstance(transform, IbmFloatTransform):
+        # Reverse IBM float conversion by swapping direction
+        reverse_direction = "to_ibm" if transform.direction == "to_ieee" else "to_ieee"
+        reverse_transform = IbmFloatTransform(reverse_direction, transform.keys)
+        return reverse_transform.apply(data)
+
+    else:
+        # For unknown transforms, return data unchanged
+        # This maintains compatibility if new transforms are added
+        return data
 
 
 def get_header_raw_and_transformed(
@@ -171,5 +127,53 @@ def get_header_raw_and_transformed(
         # Slice of headers
         raw_hdrs, transformed_hdrs = get_header_raw_and_transformed(segy_file, slice(0, 10))
     """
-    accessor = HeaderRawTransformedAccessor(segy_file)
-    return accessor.get_raw_and_transformed(indices)
+    return _get_header_raw_optimized(segy_file, indices)
+
+@profile
+def _get_header_raw_optimized(
+    segy_file: SegyFile,
+    indices: int | list[int] | np.ndarray | slice
+) -> tuple[NDArray, NDArray]:
+    """Ultra-optimized function that eliminates double disk reads entirely.
+
+    This function:
+    1. Gets transformed headers using the normal API (single disk read)
+    2. Reverses the transforms on the already-loaded data (no second disk read)
+    3. Returns both raw and transformed headers
+
+    Args:
+        segy_file: The SegyFile instance
+        indices: Which headers to retrieve
+
+    Returns:
+        Tuple of (raw_headers, transformed_headers) where transformed_headers
+        is the same as what segy_file.header[indices] would return
+    """
+    # Get transformed headers using the normal API (single disk read)
+    transformed_headers = segy_file.header[indices]
+
+    # Reverse the transforms on the already-loaded transformed data
+    # This eliminates the second disk read entirely!
+    raw_headers = _reverse_transforms(transformed_headers, segy_file.header.transform_pipeline)
+
+    return raw_headers, transformed_headers
+
+@profile
+def _reverse_transforms(transformed_data: NDArray, transform_pipeline) -> NDArray:
+    """Reverse the transform pipeline to get raw data from transformed data.
+
+    Args:
+        transformed_data: Data that has been processed through the transform pipeline
+        transform_pipeline: The transform pipeline to reverse
+
+    Returns:
+        Raw data equivalent to what was read directly from filesystem
+    """
+    # Start with the transformed data
+    raw_data = transformed_data.copy() if hasattr(transformed_data, 'copy') else transformed_data
+
+    # Apply transforms in reverse order with reversed operations
+    for transform in reversed(transform_pipeline.transforms):
+        raw_data = _reverse_single_transform(raw_data, transform)
+
+    return raw_data
