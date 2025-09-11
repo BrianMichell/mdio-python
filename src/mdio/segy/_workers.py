@@ -121,7 +121,8 @@ def trace_worker(  # noqa: PLR0913
     zarr_config.set({"threading.max_workers": 1})
 
     live_trace_indexes = local_grid_map[not_null].tolist()
-    traces = segy_file.trace[live_trace_indexes]
+    # traces = segy_file.trace[live_trace_indexes]
+    raw_headers, transformed_headers, traces = get_header_raw_and_transformed(segy_file, live_trace_indexes)
 
     header_key = "headers"
     raw_header_key = "raw_headers"
@@ -135,7 +136,7 @@ def trace_worker(  # noqa: PLR0913
         worker_variables.append(raw_header_key)
 
     ds_to_write = dataset[worker_variables]
-    raw_headers, transformed_headers = get_header_raw_and_transformed(segy_file, live_trace_indexes)
+    # raw_headers, transformed_headers = get_header_raw_and_transformed(segy_file, live_trace_indexes)
 
     if header_key in worker_variables:
         # Create temporary array for headers with the correct shape
@@ -153,7 +154,7 @@ def trace_worker(  # noqa: PLR0913
             attrs=ds_to_write[header_key].attrs,
             encoding=ds_to_write[header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
-        # del transformed_headers  # Manage memory
+    del transformed_headers  # Manage memory
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
         tmp_raw_headers[not_null] = raw_headers.view("|V240")
@@ -163,8 +164,8 @@ def trace_worker(  # noqa: PLR0913
             attrs=ds_to_write[raw_header_key].attrs,
             encoding=ds_to_write[raw_header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
-        del raw_headers  # Manage memory
 
+    del raw_headers  # Manage memory
     data_variable = ds_to_write[data_variable_name]
     fill_value = _get_fill_value(ScalarType(data_variable.dtype.name))
     tmp_samples = np.full_like(data_variable, fill_value=fill_value)

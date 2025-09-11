@@ -13,50 +13,6 @@ if TYPE_CHECKING:
     from segy.transforms import Transform, TransformPipeline, ByteSwapTransform, IbmFloatTransform
     from numpy.typing import NDArray
 
-
-class HeaderRawTransformedAccessor:
-    """Utility class to access both raw and transformed header data with single filesystem read.
-
-    This class works as a consumer of SegyFile objects without modifying the package.
-    It achieves the goal by:
-    1. Reading raw data from filesystem once
-    2. Applying transforms to get transformed data
-    3. Keeping both versions available
-
-    The transforms used in SEG-Y processing are reversible:
-    - ByteSwapTransform: Self-inverse (swapping twice returns to original)
-    - IbmFloatTransform: Can be reversed by swapping direction
-    """
-
-    def __init__(self, segy_file: SegyFile):
-        """Initialize with a SegyFile instance.
-
-        Args:
-            segy_file: The SegyFile instance to work with
-        """
-        self.segy_file = segy_file
-        self.transform_pipeline = self.segy_file.header.transform_pipeline
-
-    def _reverse_transforms(self, transformed_data: NDArray) -> NDArray:
-        """Reverse the transform pipeline to get raw data from transformed data.
-
-        Args:
-            transformed_data: Data that has been processed through the transform pipeline
-
-        Returns:
-            Raw data equivalent to what was read directly from filesystem
-        """
-        # Start with the transformed data
-        raw_data = transformed_data.copy() if hasattr(transformed_data, 'copy') else transformed_data
-
-
-        # Apply transforms in reverse order with reversed operations
-        for i, transform in enumerate(reversed(self.transform_pipeline.transforms)):
-            raw_data = _reverse_single_transform(raw_data, transform)
-
-        return raw_data
-
-@profile
 def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
     """Reverse a single transform operation.
 
@@ -98,11 +54,10 @@ def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
         # This maintains compatibility if new transforms are added
         return data
 
-
 def get_header_raw_and_transformed(
     segy_file: SegyFile,
     indices: int | list[int] | np.ndarray | slice
-) -> tuple[NDArray, NDArray]:
+) -> tuple[NDArray, NDArray, NDArray]:
     """Convenience function to get both raw and transformed header data.
 
     This is a drop-in replacement that provides the functionality you requested
@@ -127,38 +82,17 @@ def get_header_raw_and_transformed(
         # Slice of headers
         raw_hdrs, transformed_hdrs = get_header_raw_and_transformed(segy_file, slice(0, 10))
     """
-    return _get_header_raw_optimized(segy_file, indices)
 
-@profile
-def _get_header_raw_optimized(
-    segy_file: SegyFile,
-    indices: int | list[int] | np.ndarray | slice
-) -> tuple[NDArray, NDArray]:
-    """Ultra-optimized function that eliminates double disk reads entirely.
+    traces = segy_file.trace[indices]
 
-    This function:
-    1. Gets transformed headers using the normal API (single disk read)
-    2. Reverses the transforms on the already-loaded data (no second disk read)
-    3. Returns both raw and transformed headers
-
-    Args:
-        segy_file: The SegyFile instance
-        indices: Which headers to retrieve
-
-    Returns:
-        Tuple of (raw_headers, transformed_headers) where transformed_headers
-        is the same as what segy_file.header[indices] would return
-    """
-    # Get transformed headers using the normal API (single disk read)
-    transformed_headers = segy_file.header[indices]
+    transformed_headers = traces.header
 
     # Reverse the transforms on the already-loaded transformed data
     # This eliminates the second disk read entirely!
     raw_headers = _reverse_transforms(transformed_headers, segy_file.header.transform_pipeline)
 
-    return raw_headers, transformed_headers
+    return raw_headers, transformed_headers, traces
 
-@profile
 def _reverse_transforms(transformed_data: NDArray, transform_pipeline) -> NDArray:
     """Reverse the transform pipeline to get raw data from transformed data.
 
