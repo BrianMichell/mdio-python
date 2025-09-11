@@ -81,7 +81,6 @@ def header_scan_worker(
 
     return cast("HeaderArray", trace_header)
 
-# @profile
 def trace_worker(  # noqa: PLR0913
     segy_kw: SegyFileArguments,
     output_path: UPath,
