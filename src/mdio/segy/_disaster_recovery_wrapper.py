@@ -13,17 +13,25 @@ if TYPE_CHECKING:
 def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
     """Reverse a single transform operation."""
     from segy.schema import Endianness
+    from segy.transforms import ByteSwapTransform
+    from segy.transforms import IbmFloatTransform
 
     if isinstance(transform, ByteSwapTransform):
         # Reverse the endianness conversion
         # TODO: I don't think this is correct
-        if transform.target_order == Endianness.LITTLE:
-            reverse_target = Endianness.BIG
-        else:
+        if transform.target_order == Endianness.BIG:
             reverse_target = Endianness.LITTLE
+            reverse_transform = ByteSwapTransform(reverse_target)
+            return reverse_transform.apply(data)
+        return data
 
-        reverse_transform = ByteSwapTransform(reverse_target)
-        return reverse_transform.apply(data)
+        # if transform.target_order == Endianness.LITTLE:
+        #     reverse_target = Endianness.BIG
+        # else:
+        #     reverse_target = Endianness.LITTLE
+
+        # reverse_transform = ByteSwapTransform(reverse_target)
+        # return reverse_transform.apply(data)
 
     elif isinstance(transform, IbmFloatTransform):
         # Reverse IBM float conversion
