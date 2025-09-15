@@ -73,7 +73,7 @@ class TestDisasterRecoveryWrapper:
     ) -> SegySpec:
         """Create a test SEGY file with synthetic data."""
         # Update spec with desired endianness
-        spec = spec.model_copy(update={"endianness": endianness})
+        spec.endianness = endianness
 
         factory = SegyFactory(spec=spec, samples_per_trace=samples_per_trace)
 
@@ -185,6 +185,11 @@ class TestDisasterRecoveryWrapper:
                 raw_crossline_bytes = np.frombuffer(
                     raw_headers["crossline"].tobytes(), dtype=np.uint8
                 )[:4]
+
+                print(f"Transformed headers: {transformed_headers.tobytes()}")
+                print(f"Raw headers: {raw_headers.tobytes()}")
+                print(f"Inline bytes disk: {inline_bytes_disk.tobytes()}")
+                print(f"Crossline bytes disk: {crossline_bytes_disk.tobytes()}")
 
                 # Compare bytes
                 assert np.array_equal(raw_inline_bytes, inline_bytes_disk), \
