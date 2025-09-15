@@ -230,7 +230,7 @@ class TestDisasterRecoveryWrapper:
 
         # Transformed headers should still be available
         assert transformed_headers is not None
-        assert len(transformed_headers) == num_traces
+        assert transformed_headers.size == num_traces
 
     def test_multiple_traces_validation(
         self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict
@@ -344,4 +344,4 @@ class TestDisasterRecoveryWrapper:
         else:
             expected_count = 1
 
-        assert len(transformed_headers) == expected_count
+        assert transformed_headers.size == expected_count
