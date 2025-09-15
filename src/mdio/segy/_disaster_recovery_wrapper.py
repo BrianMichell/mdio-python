@@ -18,7 +18,7 @@ def _reverse_single_transform(data: NDArray, transform: Transform, endianness: E
 
     if isinstance(transform, ByteSwapTransform):
         # Reverse the endianness conversion
-        if endianness == Endianness.Little:
+        if endianness == Endianness.LITTLE:
             return data
 
         reverse_transform = ByteSwapTransform(Endianness.BIG)
