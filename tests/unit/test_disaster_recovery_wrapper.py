@@ -277,8 +277,7 @@ class TestDisasterRecoveryWrapper:
         print(f"Endianness: {endianness}")
         print(f"Data format: {data_format}")
 
-        # segy_path = temp_dir / f"test_multiple_traces_{config_name}.segy"
-        segy_path = Path(f"test_multiple_traces_{config_name}.segy")
+        segy_path = temp_dir / f"test_multiple_traces_{config_name}.segy"
 
         # Create test SEGY file with more traces
         num_traces = 25  # 5x5 grid
