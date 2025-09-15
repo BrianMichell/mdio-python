@@ -18,12 +18,10 @@ def _reverse_single_transform(data: NDArray, transform: Transform, endianness: E
 
     if isinstance(transform, ByteSwapTransform):
         # Reverse the endianness conversion
-        if endianness == Endianness.BIG:
-            reverse_target = Endianness.BIG
-        else:
+        if endianness == Endianness.Little:
             return data
 
-        reverse_transform = ByteSwapTransform(reverse_target)
+        reverse_transform = ByteSwapTransform(Endianness.BIG)
         return reverse_transform.apply(data)
 
     elif isinstance(transform, IbmFloatTransform):  # TODO: This seems incorrect...
@@ -46,6 +44,7 @@ def get_header_raw_and_transformed(
     Args:
         segy_file: The SegyFile instance
         indices: Which headers to retrieve
+        do_reverse_transforms: Whether to apply the reverse transform to get raw data
 
     Returns:
         Tuple of (raw_headers, transformed_headers, traces)
