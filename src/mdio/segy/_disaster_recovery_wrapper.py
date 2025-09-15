@@ -19,10 +19,8 @@ def _reverse_single_transform(data: NDArray, transform: Transform, endianness: E
     if isinstance(transform, ByteSwapTransform):
         # Reverse the endianness conversion
         if endianness == Endianness.BIG:
-            print("REVERSING TO BIG ENDIAN")
             reverse_target = Endianness.BIG
         else:
-            print("No REVERSING TO LITTLE ENDIAN")
             return data
 
         reverse_transform = ByteSwapTransform(reverse_target)
