@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from segy.transforms import Transform, ByteSwapTransform, IbmFloatTransform
     from numpy.typing import NDArray
 
-def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
+def _reverse_single_transform(data: NDArray, transform: Transform, endianness: Endianness) -> NDArray:
     """Reverse a single transform operation."""
     from segy.schema import Endianness
     from segy.transforms import ByteSwapTransform
@@ -18,22 +18,17 @@ def _reverse_single_transform(data: NDArray, transform: Transform) -> NDArray:
 
     if isinstance(transform, ByteSwapTransform):
         # Reverse the endianness conversion
-        # TODO: I don't think this is correct
-        if transform.target_order == Endianness.BIG:
-            reverse_target = Endianness.LITTLE
-            reverse_transform = ByteSwapTransform(reverse_target)
-            return reverse_transform.apply(data)
-        return data
+        if endianness == Endianness.BIG:
+            print("REVERSING TO BIG ENDIAN")
+            reverse_target = Endianness.BIG
+        else:
+            print("No REVERSING TO LITTLE ENDIAN")
+            return data
 
-        # if transform.target_order == Endianness.LITTLE:
-        #     reverse_target = Endianness.BIG
-        # else:
-        #     reverse_target = Endianness.LITTLE
+        reverse_transform = ByteSwapTransform(reverse_target)
+        return reverse_transform.apply(data)
 
-        # reverse_transform = ByteSwapTransform(reverse_target)
-        # return reverse_transform.apply(data)
-
-    elif isinstance(transform, IbmFloatTransform):
+    elif isinstance(transform, IbmFloatTransform):  # TODO: This seems incorrect...
         # Reverse IBM float conversion
         reverse_direction = "to_ibm" if transform.direction == "to_ieee" else "to_ieee"
         reverse_transform = IbmFloatTransform(reverse_direction, transform.keys)
@@ -57,24 +52,23 @@ def get_header_raw_and_transformed(
     Returns:
         Tuple of (raw_headers, transformed_headers, traces)
     """
-
     traces = segy_file.trace[indices]
     transformed_headers = traces.header
 
     # Reverse transforms to get raw data
     if do_reverse_transforms:
-        raw_headers = _reverse_transforms(transformed_headers, segy_file.header.transform_pipeline)
+        raw_headers = _reverse_transforms(transformed_headers, segy_file.header.transform_pipeline, segy_file.spec.endianness)
     else:
         raw_headers = None
 
     return raw_headers, transformed_headers, traces
 
-def _reverse_transforms(transformed_data: NDArray, transform_pipeline) -> NDArray:
+def _reverse_transforms(transformed_data: NDArray, transform_pipeline, endianness: Endianness) -> NDArray:
     """Reverse the transform pipeline to get raw data."""
     raw_data = transformed_data.copy() if hasattr(transformed_data, 'copy') else transformed_data
 
     # Apply transforms in reverse order
     for transform in reversed(transform_pipeline.transforms):
-        raw_data = _reverse_single_transform(raw_data, transform)
+        raw_data = _reverse_single_transform(raw_data, transform, endianness)
 
     return raw_data
