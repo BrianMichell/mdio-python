@@ -25,6 +25,7 @@ from mdio.segy._disaster_recovery_wrapper import get_header_raw_and_transformed
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
+SAMPLES_PER_TRACE = 1501
 
 class TestDisasterRecoveryWrapper:
     """Test cases for disaster recovery wrapper functionality."""
@@ -123,8 +124,7 @@ class TestDisasterRecoveryWrapper:
             header_offset = 3600
 
             # Each trace: 240 byte header + samples
-            # trace_size = 240 + 1501 * 4  # Assuming 1501 samples, 4 bytes each
-            trace_size = 240 + 1 * 4  # Assuming 1 sample, 4 bytes each
+            trace_size = 240 + SAMPLES_PER_TRACE * 4  # samples * 4 bytes each
             trace_offset = header_offset + trace_index * trace_size
 
             f.seek(trace_offset + byte_start - 1)  # SEGY is 1-based
@@ -144,8 +144,7 @@ class TestDisasterRecoveryWrapper:
 
         # Create test SEGY file
         num_traces = 10
-        # samples_per_trace = 1501
-        samples_per_trace = 1
+        samples_per_trace = SAMPLES_PER_TRACE
 
         spec = self.create_test_segy_file(
             spec=basic_segy_spec,
@@ -178,21 +177,39 @@ class TestDisasterRecoveryWrapper:
                 segy_path, trace_idx, 193, 4
             )
 
-            def extract_bytes_vectorized(data, start_byte, end_byte):
-                all_bytes = np.frombuffer(data.tobytes(), dtype=np.uint8)
-                bytes_per_element = data.dtype.intemsize
-                reshaped= all_bytes.reshape(-1, bytes_per_element)
-                return reshaped[:, start_byte:end_byte]
-
             # Convert raw headers to bytes for comparison
             if raw_headers is not None:
-                # Extract inline and crossline from raw headers
-                raw_inline_bytes = extract_bytes_vectorized(
-                    raw_headers, 189, 193
-                )[:4]
-                raw_crossline_bytes = extract_bytes_vectorized(
-                    raw_headers, 193, 197
-                )[:4]
+                # Extract from raw headers
+                # Note: We need to extract bytes directly from the structured array to preserve endianness
+                # Getting a scalar and calling .tobytes() loses endianness information
+                if raw_headers.ndim == 0:
+                    # Single trace case
+                    raw_data_bytes = raw_headers.tobytes()
+                    inline_offset = raw_headers.dtype.fields['inline'][1]
+                    crossline_offset = raw_headers.dtype.fields['crossline'][1]
+                    inline_size = raw_headers.dtype.fields['inline'][0].itemsize
+                    crossline_size = raw_headers.dtype.fields['crossline'][0].itemsize
+                    
+                    raw_inline_bytes = np.frombuffer(
+                        raw_data_bytes[inline_offset:inline_offset+inline_size], dtype=np.uint8
+                    )
+                    raw_crossline_bytes = np.frombuffer(
+                        raw_data_bytes[crossline_offset:crossline_offset+crossline_size], dtype=np.uint8
+                    )
+                else:
+                    # Multiple traces case - this test uses single trace index, so extract that trace
+                    raw_data_bytes = raw_headers[0:1].tobytes()  # Extract first trace
+                    inline_offset = raw_headers.dtype.fields['inline'][1]
+                    crossline_offset = raw_headers.dtype.fields['crossline'][1]
+                    inline_size = raw_headers.dtype.fields['inline'][0].itemsize
+                    crossline_size = raw_headers.dtype.fields['crossline'][0].itemsize
+                    
+                    raw_inline_bytes = np.frombuffer(
+                        raw_data_bytes[inline_offset:inline_offset+inline_size], dtype=np.uint8
+                    )
+                    raw_crossline_bytes = np.frombuffer(
+                        raw_data_bytes[crossline_offset:crossline_offset+crossline_size], dtype=np.uint8
+                    )
 
                 print(f"Transformed headers: {transformed_headers.tobytes()}")
                 print(f"Raw headers: {raw_headers.tobytes()}")
@@ -217,8 +234,7 @@ class TestDisasterRecoveryWrapper:
 
         # Create test SEGY file
         num_traces = 5
-        # samples_per_trace = 1501
-        samples_per_trace = 1
+        samples_per_trace = SAMPLES_PER_TRACE
 
         spec = self.create_test_segy_file(
             spec=basic_segy_spec,
@@ -266,8 +282,7 @@ class TestDisasterRecoveryWrapper:
 
         # Create test SEGY file with more traces
         num_traces = 25  # 5x5 grid
-        # samples_per_trace = 1501
-        samples_per_trace = 1
+        samples_per_trace = SAMPLES_PER_TRACE
 
         spec = self.create_test_segy_file(
             spec=basic_segy_spec,
@@ -367,8 +382,7 @@ class TestDisasterRecoveryWrapper:
 
         # Create test SEGY file
         num_traces = 10
-        # samples_per_trace = 1501
-        samples_per_trace = 1
+        samples_per_trace = SAMPLES_PER_TRACE
 
         spec = self.create_test_segy_file(
             spec=basic_segy_spec,
