@@ -78,7 +78,6 @@ class AbstractDatasetTemplate(ABC):
         if header_dtype:
             self._add_trace_headers(header_dtype)
 
-        print(f"Number of queued transforms: {len(self._queued_transforms)}")
         for transform in self._queued_transforms:
             transform(self._builder)
         return self._builder.build()

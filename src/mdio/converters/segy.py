@@ -160,7 +160,6 @@ def _build_and_check_grid(segy_dimensions: list[Dimension], segy_file: SegyFile,
     Raises:
         GridTraceCountError: If number of traces in SEG-Y file does not match the parsed grid
     """
-    # print(segy_dimensions)
     grid = Grid(dims=segy_dimensions)
     grid_density_qc(grid, segy_file.num_traces)
     grid.build_map(segy_headers)
@@ -384,8 +383,6 @@ def segy_to_mdio(  # noqa PLR0913
     _add_grid_override_to_metadata(dataset=mdio_ds, grid_overrides=grid_overrides)
 
     xr_dataset: xr_Dataset = to_xarray_dataset(mdio_ds=mdio_ds)
-
-    print(xr_dataset)
 
     _, non_dim_coords = _get_coordinates(grid, segy_headers, mdio_template)
     xr_dataset, drop_vars_delayed = _populate_coordinates(
