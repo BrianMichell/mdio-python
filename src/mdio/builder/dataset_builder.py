@@ -128,6 +128,9 @@ class MDIODatasetBuilder:
         # In-place insertion of the dimension to the existing list of dimensions
         self._dimensions.insert(position, dimension)
 
+        # TODO: HARDCODED FOR DEBUGGING
+        self._dimensions[-1].size = 25
+
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
             from mdio.builder.schemas.chunk_grid import RegularChunkGrid, RegularChunkShape
