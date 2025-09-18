@@ -381,16 +381,11 @@ def segy_to_mdio(  # noqa PLR0913
         header_dtype=to_structured_type(segy_spec.trace.header.dtype),
     )
 
-    # print(mdio_ds.model_dump_json())
-    for v in mdio_ds.variables:
-        print(f"Attempting to dump variable {v.name}... ", end="")
-        tmp = v.model_dump_json()
-        print("Good!")
-        # print(v.model_dump_json())
-
     _add_grid_override_to_metadata(dataset=mdio_ds, grid_overrides=grid_overrides)
 
     xr_dataset: xr_Dataset = to_xarray_dataset(mdio_ds=mdio_ds)
+
+    print(xr_dataset)
 
     _, non_dim_coords = _get_coordinates(grid, segy_headers, mdio_template)
     xr_dataset, drop_vars_delayed = _populate_coordinates(

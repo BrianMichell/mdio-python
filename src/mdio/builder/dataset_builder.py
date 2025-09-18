@@ -125,32 +125,9 @@ class MDIODatasetBuilder:
             msg = "New dimension chunk size must be greater than 0"
             raise ValueError(msg)
 
-        # print("###########################STATE BEFORE INSERTING DIMENSION ###########################")
-        # for d in self._dimensions:
-        #     print(d.model_dump_json())
-        # for c in self._coordinates:
-        #     print(c.model_dump_json())
-        # for v in self._variables:
-        #     print(v.model_dump_json())
-        # print("########################################################################################")
-
-
         # In-place insertion of the dimension to the existing list of dimensions
         self._dimensions.insert(position, dimension)
 
-        # def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
-        #     """Propogates the dimension to the variable or coordinate."""
-        #     if len(variable.dimensions) <= position:
-        #         # Don't do anything if the new dimension is not within the Variable's domain
-        #         return variable
-        #     if variable.name == "trace_mask":
-        #         # Special case for trace_mask. Don't do anything.
-        #         return variable
-        #     # new_dimensions = variable.dimensions[:position] + (dimension,) + variable.dimensions[position:]
-        #     # new_chunk_sizes = variable.chunk_sizes[:position] + (new_dim_chunk_size,) + variable.chunk_sizes[position:]
-        #     new_dimensions = variable.dimensions[:position] + [dimension] + variable.dimensions[position:]
-        #     new_chunk_sizes = variable.chunk_sizes[:position] + [new_dim_chunk_size] + variable.chunk_sizes[position:]
-        #     return variable.model_copy(update={"dimensions": new_dimensions, "chunk_sizes": new_chunk_sizes})
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
             from mdio.builder.schemas.chunk_grid import RegularChunkGrid, RegularChunkShape
@@ -160,8 +137,6 @@ class MDIODatasetBuilder:
             if variable.name == "trace_mask":
                 # Special case for trace_mask. Don't do anything.
                 return variable
-            # new_dimensions = variable.dimensions[:position] + (dimension,) + variable.dimensions[position:]
-            # new_chunk_sizes = variable.chunk_sizes[:position] + (new_dim_chunk_size,) + variable.chunk_sizes[position:]
             new_dimensions = variable.dimensions[:position] + [dimension] + variable.dimensions[position:]
             
             # Get current chunk shape from metadata
