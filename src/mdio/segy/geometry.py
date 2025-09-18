@@ -248,7 +248,7 @@ def create_trace_index(
     return index_headers
 
 
-def analyze_non_indexed_headers(index_headers: HeaderArray, dtype: DTypeLike = np.int16) -> NDArray:
+def analyze_non_indexed_headers(index_headers: HeaderArray, dtype: DTypeLike = np.int16, index_names: Sequence[str] = None) -> NDArray:
     """Check input headers for SEG-Y input to help determine geometry.
 
     This function reads in trace_qc_count headers and finds the unique cable values. Then, it
@@ -267,7 +267,7 @@ def analyze_non_indexed_headers(index_headers: HeaderArray, dtype: DTypeLike = n
     total_depth = 0
     header_names = []
     for header_key in index_headers.dtype.names:
-        if header_key != "trace":
+        if header_key != "trace" and header_key in index_names:
             unique_headers[header_key] = np.sort(np.unique(index_headers[header_key]))
             header_names.append(header_key)
             total_depth += 1
@@ -303,6 +303,7 @@ class GridOverrideCommand(ABC):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
+        index_names: Sequence[str] = None,
     ) -> NDArray:
         """Perform the grid transform."""
 
@@ -385,11 +386,12 @@ class DuplicateIndex(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
+        index_names: Sequence[str],
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
 
-        return analyze_non_indexed_headers(index_headers)
+        return analyze_non_indexed_headers(index_headers, index_names=index_names)
 
     def transform_index_names(self, index_names: Sequence[str]) -> Sequence[str]:
         """Insert dimension "trace" to the sample-1 dimension."""
@@ -447,6 +449,7 @@ class AutoChannelWrap(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
+        index_names = None,
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
@@ -483,7 +486,7 @@ class ChannelWrap(GridOverrideCommand):
         self.check_required_keys(index_headers)
         self.check_required_params(grid_overrides)
 
-    def transform(self, index_headers: HeaderArray, grid_overrides: dict[str, bool | int]) -> NDArray:
+    def transform(self, index_headers: HeaderArray, grid_overrides: dict[str, bool | int], index_names = None) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
 
@@ -511,6 +514,7 @@ class CalculateCable(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
+        index_names = None,
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
@@ -536,6 +540,7 @@ class AutoShotWrap(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
+        index_names = None,
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
@@ -602,11 +607,6 @@ class GridOverrider:
     ) -> tuple[HeaderArray, tuple[str], tuple[int]]:
         """Run grid overrides and return result."""
 
-        # print("="*100)
-        # print(index_headers.to_dict().keys())
-        # print(index_headers)
-        # print("="*100)
-
         for override in grid_overrides:
             if override in self.parameters:
                 continue
@@ -615,7 +615,7 @@ class GridOverrider:
                 raise GridOverrideUnknownError(override)
 
             function = self.commands[override].transform
-            index_headers = function(index_headers, grid_overrides=grid_overrides)
+            index_headers = function(index_headers, grid_overrides=grid_overrides, index_names=index_names)
 
             function = self.commands[override].transform_index_names
             index_names = function(index_names)

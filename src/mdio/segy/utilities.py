@@ -58,21 +58,11 @@ def get_grid_plan(  # noqa:  C901
     horizontal_dimensions = template.dimension_names[:-1]
     horizontal_coordinates = horizontal_dimensions + template.coordinate_names
     headers_subset = parse_headers(segy_file=segy_file, subset=horizontal_coordinates)
-    from segy.arrays import HeaderArray
-
-    # reduced_headers_subset = HeaderArray(h for h in headers_subset.to_dict().keys() if h in horizontal_dimensions)
-    # Get field names to keep
-    fields_to_keep = [h for h in headers_subset.dtype.names if h in horizontal_dimensions]
-
-    # Create filtered copy using numpy's field selection
-    reduced_headers_subset = HeaderArray(headers_subset[fields_to_keep])
 
     # Handle grid overrides.
     override_handler = GridOverrider()
     headers_subset, horizontal_coordinates, chunksize = override_handler.run(
-        # headers_subset,
-        reduced_headers_subset,
-        # horizontal_coordinates,
+        headers_subset,
         horizontal_dimensions,
         chunksize=chunksize,
         grid_overrides=grid_overrides,
@@ -80,7 +70,7 @@ def get_grid_plan(  # noqa:  C901
 
     if grid_overrides.get("HasDuplicates", False):
         pos = len(template.dimension_names) - 1  # TODO: Implement the negative position case...
-        template._queue_transform(lambda builder: builder.push_dimension(NamedDimension(name="trace", size=headers_subset["trace"].size), position=pos, new_dim_chunk_size=1))
+        template._queue_transform(lambda builder: builder.push_dimension(NamedDimension(name="trace", size=np.max(headers_subset["trace"])), position=pos, new_dim_chunk_size=1))
         horizontal_dimensions = (*horizontal_dimensions, "trace")
 
     dimensions = []
