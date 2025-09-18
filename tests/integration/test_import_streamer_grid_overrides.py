@@ -52,8 +52,7 @@ class TestImport4DNonReg:  # pragma: no cover - tests is skipped
             segy_spec=segy_spec,
             mdio_template=TemplateRegistry().get("PreStackShotGathers3DTime"),
             input_path=segy_path,
-            # output_path=zarr_tmp,
-            output_path="test_has_duplicates.mdio",
+            output_path=zarr_tmp,
             overwrite=True,
             grid_overrides=grid_override,
         )
@@ -69,10 +68,9 @@ class TestImport4DNonReg:  # pragma: no cover - tests is skipped
         assert ds["segy_file_header"].attrs["binaryHeader"]["samples_per_trace"] == num_samples
         assert ds.attrs["attributes"]["gridOverrides"] == grid_override
 
-        assert npt.assert_array_equal(ds["shot_point"], shots)
+        xrt.assert_duckarray_equal(ds["shot_point"], shots)
         xrt.assert_duckarray_equal(ds["cable"], cables)
 
-        # assert grid.select_dim("trace") == Dimension(range(1, np.amax(receivers_per_cable) + 1), "trace")
         expected = list(range(1, np.amax(receivers_per_cable) + 1))
         xrt.assert_duckarray_equal(ds["trace"], expected)
 
