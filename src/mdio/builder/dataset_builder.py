@@ -101,7 +101,7 @@ class MDIODatasetBuilder:
         self._state = _BuilderState.HAS_DIMENSIONS
         return self
 
-    def push_dimension(self, dimension: NamedDimension, position: int, new_dim_chunk_size: int=1) -> "MDIODatasetBuilder":
+    def push_dimension(self, dimension: NamedDimension, position: int, new_dim_chunk_size: int=1, new_dim_size: int=1) -> "MDIODatasetBuilder":
         """Pushes a dimension to all Coordiantes and Variables.
         The position argument is the domain index of the dimension to push.
         If a Variable is within the position domain, it will be inserted at the position and all remaining dimensions will be shifted to the right.
@@ -128,8 +128,7 @@ class MDIODatasetBuilder:
         # In-place insertion of the dimension to the existing list of dimensions
         self._dimensions.insert(position, dimension)
 
-        # TODO: HARDCODED FOR DEBUGGING
-        self._dimensions[-1].size = 25
+        self._dimensions[position].size = new_dim_size
 
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
