@@ -80,6 +80,7 @@ class AbstractDatasetTemplate(ABC):
 
         for transform in self._queued_transforms:
             transform(self._builder)
+        self._queued_transforms = []
         return self._builder.build()
 
     @property
