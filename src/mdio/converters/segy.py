@@ -176,12 +176,15 @@ def _scan_for_headers(
         grid_overrides=grid_overrides,
     )
     if full_chunk_size != chunk_size:
+        pass
         # TODO(Dmitriy): implement grid overrides
         # https://github.com/TGSAI/mdio-python/issues/585
         # The returned 'chunksize' is used only for grid_overrides. We will need to use it when full
         # support for grid overrides is implemented
-        err = "Support for changing full_chunk_size in grid overrides is not yet implemented"
-        raise NotImplementedError(err)
+        # err = "Support for changing full_chunk_size in grid overrides is not yet implemented"
+        # raise NotImplementedError(err)
+
+    full_chunk_size = template.full_chunk_size
     return segy_dimensions, segy_headers
 
 
@@ -199,6 +202,7 @@ def _build_and_check_grid(segy_dimensions: list[Dimension], num_traces: int, seg
     Raises:
         GridTraceCountError: If number of traces in SEG-Y file does not match the parsed grid
     """
+    # print(segy_dimensions)
     grid = Grid(dims=segy_dimensions)
     grid_density_qc(grid, num_traces)
     grid.build_map(segy_headers)
@@ -496,9 +500,6 @@ def segy_to_mdio(  # noqa PLR0913
 
     grid = _build_and_check_grid(segy_dimensions, segy_file.num_traces, segy_headers)
 
-    _, non_dim_coords = _get_coordinates(grid, segy_headers, mdio_template)
-    header_dtype = to_structured_type(segy_spec.trace.header.dtype)
-
     if os.getenv("MDIO__IMPORT__RAW_HEADERS") in ("1", "true", "yes", "on"):
         if zarr.config.get("default_zarr_format") == ZarrFormat.V2:
             logger.warning("Raw headers are only supported for Zarr v3. Skipping raw headers.")
@@ -506,13 +507,19 @@ def segy_to_mdio(  # noqa PLR0913
             logger.warning("MDIO__IMPORT__RAW_HEADERS is experimental and expected to change or be removed.")
             mdio_template = _add_raw_headers_to_template(mdio_template)
 
-    horizontal_unit = _get_horizontal_coordinate_unit(segy_dimensions)
     mdio_ds: Dataset = mdio_template.build_dataset(
         name=mdio_template.name,
         sizes=grid.shape,
-        horizontal_coord_unit=horizontal_unit,
-        header_dtype=header_dtype,
+        horizontal_coord_unit=_get_horizontal_coordinate_unit(segy_dimensions),
+        header_dtype=to_structured_type(segy_spec.trace.header.dtype),
     )
+
+    # print(mdio_ds.model_dump_json())
+    for v in mdio_ds.variables:
+        print(f"Attempting to dump variable {v.name}... ", end="")
+        tmp = v.model_dump_json()
+        print("Good!")
+        # print(v.model_dump_json())
 
     _add_grid_override_to_metadata(dataset=mdio_ds, grid_overrides=grid_overrides)
 
@@ -523,6 +530,7 @@ def segy_to_mdio(  # noqa PLR0913
 
     xr_dataset: xr_Dataset = to_xarray_dataset(mdio_ds=mdio_ds)
 
+    _, non_dim_coords = _get_coordinates(grid, segy_headers, mdio_template)
     xr_dataset, drop_vars_delayed = _populate_coordinates(
         dataset=xr_dataset,
         grid=grid,

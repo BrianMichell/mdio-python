@@ -30,8 +30,9 @@ os.environ["MDIO__IMPORT__SAVE_SEGY_FILE_HEADER"] = "true"
 
 # TODO(Altay): Finish implementing these grid overrides.
 # https://github.com/TGSAI/mdio-python/issues/612
-@pytest.mark.skip(reason="NonBinned and HasDuplicates haven't been properly implemented yet.")
-@pytest.mark.parametrize("grid_override", [{"NonBinned": True}, {"HasDuplicates": True}])
+# @pytest.mark.skip(reason="NonBinned and HasDuplicates haven't been properly implemented yet.")
+# @pytest.mark.parametrize("grid_override", [{"NonBinned": True}, {"HasDuplicates": True}])
+@pytest.mark.parametrize("grid_override", [{"HasDuplicates": True}])
 @pytest.mark.parametrize("chan_header_type", [StreamerShotGeometryType.C])
 class TestImport4DNonReg:  # pragma: no cover - tests is skipped
     """Test for 4D segy import with grid overrides."""
@@ -51,7 +52,8 @@ class TestImport4DNonReg:  # pragma: no cover - tests is skipped
             segy_spec=segy_spec,
             mdio_template=TemplateRegistry().get("PreStackShotGathers3DTime"),
             input_path=segy_path,
-            output_path=zarr_tmp,
+            # output_path=zarr_tmp,
+            output_path="test_has_duplicates.mdio",
             overwrite=True,
             grid_overrides=grid_override,
         )

@@ -15,9 +15,9 @@ from tqdm.auto import tqdm
 
 from mdio.segy._workers import header_scan_worker
 
+from segy.arrays import HeaderArray
 if TYPE_CHECKING:
     from segy import SegyFile
-    from segy.arrays import HeaderArray
 
 default_cpus = cpu_count(logical=True)
 
@@ -77,4 +77,4 @@ def parse_headers(
         headers: list[HeaderArray] = list(lazy_work)
 
     # Merge blocks before return
-    return np.concatenate(headers)
+    return HeaderArray(np.concatenate(headers))

@@ -534,6 +534,12 @@ class GridOverrider:
         chunksize: Sequence[int] | None = None,
     ) -> tuple[HeaderArray, tuple[str], tuple[int]]:
         """Run grid overrides and return result."""
+
+        # print("="*100)
+        # print(index_headers.to_dict().keys())
+        # print(index_headers)
+        # print("="*100)
+
         for override in grid_overrides:
             if override in self.parameters:
                 continue
