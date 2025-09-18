@@ -101,6 +101,100 @@ class MDIODatasetBuilder:
         self._state = _BuilderState.HAS_DIMENSIONS
         return self
 
+    def push_dimension(self, dimension: NamedDimension, position: int, new_dim_chunk_size: int=1) -> "MDIODatasetBuilder":
+        """Pushes a dimension to all Coordiantes and Variables.
+        The position argument is the domain index of the dimension to push.
+        If a Variable is within the position domain, it will be inserted at the position and all remaining dimensions will be shifted to the right.
+
+        Args:
+            dimension: The dimension to push
+            position: The position to push the dimension to
+            new_dim_chunk_size: The chunk size for only the new dimension
+
+        Returns:
+            self: Returns self for method chaining
+        """
+        if position < 0:
+            msg = "Support for negative positions is not implemented yet!"
+            raise ValueError(msg)
+        if position > len(self._dimensions):
+            msg = "Position is greater than the number of dimensions"
+            raise ValueError(msg)
+        if new_dim_chunk_size <= 0:
+            # TODO(BrianMichell): Do we actually need to check this, or does Pydantic handle when we call?
+            msg = "New dimension chunk size must be greater than 0"
+            raise ValueError(msg)
+
+        # print("###########################STATE BEFORE INSERTING DIMENSION ###########################")
+        # for d in self._dimensions:
+        #     print(d.model_dump_json())
+        # for c in self._coordinates:
+        #     print(c.model_dump_json())
+        # for v in self._variables:
+        #     print(v.model_dump_json())
+        # print("########################################################################################")
+
+
+        # In-place insertion of the dimension to the existing list of dimensions
+        self._dimensions.insert(position, dimension)
+
+        # def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
+        #     """Propogates the dimension to the variable or coordinate."""
+        #     if len(variable.dimensions) <= position:
+        #         # Don't do anything if the new dimension is not within the Variable's domain
+        #         return variable
+        #     if variable.name == "trace_mask":
+        #         # Special case for trace_mask. Don't do anything.
+        #         return variable
+        #     # new_dimensions = variable.dimensions[:position] + (dimension,) + variable.dimensions[position:]
+        #     # new_chunk_sizes = variable.chunk_sizes[:position] + (new_dim_chunk_size,) + variable.chunk_sizes[position:]
+        #     new_dimensions = variable.dimensions[:position] + [dimension] + variable.dimensions[position:]
+        #     new_chunk_sizes = variable.chunk_sizes[:position] + [new_dim_chunk_size] + variable.chunk_sizes[position:]
+        #     return variable.model_copy(update={"dimensions": new_dimensions, "chunk_sizes": new_chunk_sizes})
+        def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
+            """Propogates the dimension to the variable or coordinate."""
+            from mdio.builder.schemas.chunk_grid import RegularChunkGrid, RegularChunkShape
+            if len(variable.dimensions) <= position:
+                # Don't do anything if the new dimension is not within the Variable's domain
+                return variable
+            if variable.name == "trace_mask":
+                # Special case for trace_mask. Don't do anything.
+                return variable
+            # new_dimensions = variable.dimensions[:position] + (dimension,) + variable.dimensions[position:]
+            # new_chunk_sizes = variable.chunk_sizes[:position] + (new_dim_chunk_size,) + variable.chunk_sizes[position:]
+            new_dimensions = variable.dimensions[:position] + [dimension] + variable.dimensions[position:]
+            
+            # Get current chunk shape from metadata
+            current_chunk_shape = (1,) * len(variable.dimensions)  # Default fallback
+            if variable.metadata is not None and variable.metadata.chunk_grid is not None:
+                current_chunk_shape = variable.metadata.chunk_grid.configuration.chunk_shape
+            
+            # Insert new chunk size at the correct position
+            new_chunk_shape = current_chunk_shape[:position] + (new_dim_chunk_size,) + current_chunk_shape[position:]
+            
+            # Create new chunk grid configuration
+            new_chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=new_chunk_shape))
+            
+            # Update metadata with new chunk grid
+            new_metadata = variable.metadata.model_copy() if variable.metadata else VariableMetadata()
+            new_metadata.chunk_grid = new_chunk_grid
+            ret = variable.model_copy(update={"dimensions": new_dimensions, "metadata": new_metadata})
+            return ret
+
+        to_ignore = []
+        for v in self._dimensions:
+            to_ignore.append(v.name)
+        for c in self._coordinates:
+            to_ignore.append(c.name)
+
+        for i in range(len(self._variables)):
+            var = self._variables[i]
+            if var.name in to_ignore:
+                continue
+            self._variables[i] = propogate_dimension(var, position, new_dim_chunk_size)
+
+        return self
+
     def add_coordinate(  # noqa: PLR0913
         self,
         name: str,

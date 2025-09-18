@@ -4,6 +4,7 @@ import copy
 from abc import ABC
 from abc import abstractmethod
 from typing import Any
+from typing import Callable
 
 from mdio.builder.dataset_builder import MDIODatasetBuilder
 from mdio.builder.schemas import compressors
@@ -40,6 +41,11 @@ class AbstractDatasetTemplate(ABC):
         self._builder: MDIODatasetBuilder | None = None
         self._dim_sizes = ()
         self._horizontal_coord_unit = None
+        self._queued_transforms = []
+
+    def _queue_transform(self, transform: Callable) -> None:
+        """Queue a transform to be applied to the dataset once it has been built."""
+        self._queued_transforms.append(transform)
 
     def build_dataset(
         self,
@@ -71,6 +77,10 @@ class AbstractDatasetTemplate(ABC):
         self._add_trace_mask()
         if header_dtype:
             self._add_trace_headers(header_dtype)
+
+        print(f"Number of queued transforms: {len(self._queued_transforms)}")
+        for transform in self._queued_transforms:
+            transform(self._builder)
         return self._builder.build()
 
     @property
