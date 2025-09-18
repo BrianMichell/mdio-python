@@ -134,11 +134,8 @@ class MDIODatasetBuilder:
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
             from mdio.builder.schemas.chunk_grid import RegularChunkGrid, RegularChunkShape
-            if len(variable.dimensions) <= position:
+            if len(variable.dimensions) + 1 <= position:
                 # Don't do anything if the new dimension is not within the Variable's domain
-                return variable
-            if variable.name == "trace_mask":
-                # Special case for trace_mask. Don't do anything.
                 return variable
             new_dimensions = variable.dimensions[:position] + [dimension] + variable.dimensions[position:]
             
