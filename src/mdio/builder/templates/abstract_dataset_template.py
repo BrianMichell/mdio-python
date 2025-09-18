@@ -3,6 +3,7 @@
 import copy
 from abc import ABC
 from abc import abstractmethod
+import logging
 from typing import Any
 from typing import Callable
 
@@ -18,6 +19,7 @@ from mdio.builder.schemas.v1.variable import CoordinateMetadata
 from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.types import SeismicDataDomain
 
+logger = logging.getLogger(__name__)
 
 class AbstractDatasetTemplate(ABC):
     """Abstract base class that defines the template method for Dataset building factory.
@@ -79,6 +81,7 @@ class AbstractDatasetTemplate(ABC):
             self._add_trace_headers(header_dtype)
 
         for transform in self._queued_transforms:
+            logger.debug(f"Applying transform: {transform.__name__}")
             transform(self._builder)
         self._queued_transforms = []
         return self._builder.build()
