@@ -67,37 +67,20 @@ def get_grid_plan(  # noqa:  C901
     # Create filtered copy using numpy's field selection
     reduced_headers_subset = HeaderArray(headers_subset[fields_to_keep])
 
-    # print("="*100)
-    # print(headers_subset.to_dict().keys())
-    # print(headers_subset)
-    # print("="*100)
-
     # Handle grid overrides.
     override_handler = GridOverrider()
     headers_subset, horizontal_coordinates, chunksize = override_handler.run(
         # headers_subset,
         reduced_headers_subset,
-        horizontal_coordinates,
-        # horizontal_dimensions,
+        # horizontal_coordinates,
+        horizontal_dimensions,
         chunksize=chunksize,
         grid_overrides=grid_overrides,
     )
 
-    # print("="*100)
-    # print(headers_subset.to_dict().keys())
-    # print(headers_subset)
-    # print("="*100)
-
     if grid_overrides.get("HasDuplicates", False):
-        # print(f"Size of header subset: {headers_subset['trace'].size}")
-        # print("="*100)
-        # print(headers_subset)
-        # print("="*100)
         pos = len(template.dimension_names) - 1  # TODO: Implement the negative position case...
-        # template._queue_transform(lambda builder: builder.push_dimension(Dimension(coords=np.arange(headers_subset["trace"].size), name="trace"), position=pos, new_dim_chunk_size=1))
-        # template._queue_transform(lambda builder: builder.push_dimension(Dimension(coords=headers_subset["trace"].size, name="trace"), position=pos, new_dim_chunk_size=1))
         template._queue_transform(lambda builder: builder.push_dimension(NamedDimension(name="trace", size=headers_subset["trace"].size), position=pos, new_dim_chunk_size=1))
-        # horizontal_dimensions.append("trace")
         horizontal_dimensions = (*horizontal_dimensions, "trace")
 
     dimensions = []
