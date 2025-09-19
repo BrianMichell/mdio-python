@@ -138,15 +138,19 @@ def trace_worker(  # noqa: PLR0913
         do_reverse_transforms = True
         worker_variables.append(raw_header_key)
 
-    raw_headers, transformed_headers, traces = get_header_raw_and_transformed(
-        segy_file, live_trace_indexes, do_reverse_transforms=do_reverse_transforms
-    )
+    # raw_headers, transformed_headers, traces = get_header_raw_and_transformed(
+    #     segy_file, live_trace_indexes, do_reverse_transforms=do_reverse_transforms
+    # )
+    from copy import deepcopy  # TODO: Move to head if we need to copy
+    header_pipeline = deepcopy(segy_file.accessors.header_decode_pipeline)
+    traces = segy_file.trace[live_trace_indexes]
     ds_to_write = dataset[worker_variables]
 
     if header_key in worker_variables:
         # Create temporary array for headers with the correct shape
         tmp_headers = np.zeros_like(dataset[header_key])
-        tmp_headers[not_null] = transformed_headers
+        # tmp_headers[not_null] = transformed_headers
+        tmp_headers[not_null] = header_pipeline.apply(traces.header.copy())
         # Create a new Variable object to avoid copying the temporary array
         # The ideal solution is to use `ds_to_write[header_key][:] = tmp_headers`
         # but Xarray appears to be copying memory instead of doing direct assignment.
@@ -157,10 +161,11 @@ def trace_worker(  # noqa: PLR0913
             attrs=ds_to_write[header_key].attrs,
             encoding=ds_to_write[header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
-    del transformed_headers  # Manage memory
+    # del transformed_headers  # Manage memory
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-        tmp_raw_headers[not_null] = raw_headers.view("|V240")
+        # tmp_raw_headers[not_null] = raw_headers.view("|V240")
+        tmp_raw_headers[not_null] = traces.header.view("|V240")
 
         ds_to_write[raw_header_key] = Variable(
             ds_to_write[raw_header_key].dims,
@@ -169,7 +174,7 @@ def trace_worker(  # noqa: PLR0913
             encoding=ds_to_write[raw_header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
 
-    del raw_headers  # Manage memory
+    # del raw_headers  # Manage memory
     data_variable = ds_to_write[data_variable_name]
     fill_value = _get_fill_value(ScalarType(data_variable.dtype.name))
     tmp_samples = np.full_like(data_variable, fill_value=fill_value)
