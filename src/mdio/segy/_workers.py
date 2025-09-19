@@ -138,11 +138,9 @@ def trace_worker(  # noqa: PLR0913
         do_reverse_transforms = True
         worker_variables.append(raw_header_key)
 
-    # raw_headers, transformed_headers, traces = get_header_raw_and_transformed(
-    #     segy_file, live_trace_indexes, do_reverse_transforms=do_reverse_transforms
-    # )
     from copy import deepcopy  # TODO: Move to head if we need to copy
     header_pipeline = deepcopy(segy_file.accessors.header_decode_pipeline)
+    segy_file.accessors.header_decode_pipeline.transforms = []
     traces = segy_file.trace[live_trace_indexes]
     ds_to_write = dataset[worker_variables]
 
@@ -166,8 +164,7 @@ def trace_worker(  # noqa: PLR0913
     # del transformed_headers  # Manage memory
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-        # tmp_raw_headers[not_null] = raw_headers.view("|V240")
-        tmp_raw_headers[not_null] = traces.header.view("|V240")
+        tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header).view("|V240")
 
         ds_to_write[raw_header_key] = Variable(
             ds_to_write[raw_header_key].dims,
