@@ -126,16 +126,12 @@ def trace_worker(  # noqa: PLR0913
     header_key = "headers"
     raw_header_key = "raw_headers"
 
-    # Used to disable the reverse transforms if we aren't going to write the raw headers
-    do_reverse_transforms = False
-
     # Get subset of the dataset that has not yet been saved
     # The headers might not be present in the dataset
     worker_variables = [data_variable_name]
     if header_key in dataset.data_vars:  # Keeping the `if` here to allow for more worker configurations
         worker_variables.append(header_key)
     if raw_header_key in dataset.data_vars:
-        do_reverse_transforms = True
         worker_variables.append(raw_header_key)
 
     from copy import deepcopy  # TODO: Move to head if we need to copy
