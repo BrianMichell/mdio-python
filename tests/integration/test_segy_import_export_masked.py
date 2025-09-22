@@ -546,14 +546,15 @@ class TestNdImportExport:
         # Compare all valid traces byte-by-byte
         segy_trace_idx = 0
         flat_mask = trace_mask.ravel()
-        flat_raw_headers = raw_headers_data.reshape(-1, raw_headers_data.shape[-1])
+        flat_raw_headers = raw_headers_data.ravel()  # Flatten to 1D array of 240-byte header records
         
         for grid_idx in range(flat_mask.size):
             if not flat_mask[grid_idx]:
                 continue
                 
-            # Get MDIO header as bytes
-            mdio_header_bytes = np.frombuffer(flat_raw_headers[grid_idx].tobytes(), dtype=np.uint8)
+            # Get MDIO header as bytes - convert single header record to bytes
+            header_record = flat_raw_headers[grid_idx]
+            mdio_header_bytes = np.frombuffer(header_record.tobytes(), dtype=np.uint8)
             
             # Get SEG-Y header as raw bytes directly from file
             segy_raw_header_bytes = read_segy_trace_header(segy_trace_idx)
