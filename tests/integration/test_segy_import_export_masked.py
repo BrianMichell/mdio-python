@@ -563,60 +563,62 @@ class TestNdImportExport:
             # Get SEG-Y header as raw bytes directly from file
             segy_raw_header_bytes = read_segy_trace_header(segy_trace_idx)
             segy_header_bytes = np.frombuffer(segy_raw_header_bytes, dtype=np.uint8)
+
+            assert_array_equal(mdio_header_bytes, segy_header_bytes)
             
             # Compare byte-by-byte
             # Write hexdumps to separate files for analysis
-            def hexdump_to_string(data: bytes, title: str) -> str:
-                """Create hexdump string."""
-                lines = [f"{title}", "=" * len(title), ""]
+            # def hexdump_to_string(data: bytes, title: str) -> str:
+            #     """Create hexdump string."""
+            #     lines = [f"{title}", "=" * len(title), ""]
                  
-                for i in range(0, len(data), 16):
-                    # Address
-                    addr = i
-                    hex_part = ""
-                    ascii_part = ""
+            #     for i in range(0, len(data), 16):
+            #         # Address
+            #         addr = i
+            #         hex_part = ""
+            #         ascii_part = ""
                      
-                    # Process 16 bytes at a time
-                    for j in range(16):
-                        if i + j < len(data):
-                            byte_val = data[i + j]
-                            hex_part += f"{byte_val:02x} "
-                            ascii_part += chr(byte_val) if 32 <= byte_val <= 126 else "."
-                        else:
-                            hex_part += "   "
-                            ascii_part += " "
+            #         # Process 16 bytes at a time
+            #         for j in range(16):
+            #             if i + j < len(data):
+            #                 byte_val = data[i + j]
+            #                 hex_part += f"{byte_val:02x} "
+            #                 ascii_part += chr(byte_val) if 32 <= byte_val <= 126 else "."
+            #             else:
+            #                 hex_part += "   "
+            #                 ascii_part += " "
                      
-                    lines.append(f"{addr:08x}: {hex_part} |{ascii_part}|")
+            #         lines.append(f"{addr:08x}: {hex_part} |{ascii_part}|")
                  
-                return "\n".join(lines)
+            #     return "\n".join(lines)
              
-            # Generate filenames for this test case
-            segy_filename = f"segy_headers_{grid_conf.name}.txt"
-            mdio_filename = f"mdio_headers_{grid_conf.name}.txt"
+            # # Generate filenames for this test case
+            # segy_filename = f"segy_headers_{grid_conf.name}.txt"
+            # mdio_filename = f"mdio_headers_{grid_conf.name}.txt"
              
-            # Append SEG-Y hexdump to file
-            with open(segy_filename, operation) as f:
-                if segy_trace_idx == 0:
-                    f.write("")  # Start fresh for first trace
-                else:
-                    f.write("\n\n")  # Add spacing between traces
-                f.write(hexdump_to_string(segy_header_bytes, 
-                                        f"SEG-Y Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
+            # # Append SEG-Y hexdump to file
+            # with open(segy_filename, operation) as f:
+            #     if segy_trace_idx == 0:
+            #         f.write("")  # Start fresh for first trace
+            #     else:
+            #         f.write("\n\n")  # Add spacing between traces
+            #     f.write(hexdump_to_string(segy_header_bytes, 
+            #                             f"SEG-Y Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
              
-            # Append MDIO hexdump to file  
-            with open(mdio_filename, operation) as f:
-                if segy_trace_idx == 0:
-                    f.write("")  # Start fresh for first trace
-                else:
-                    f.write("\n\n")  # Add spacing between traces
-                f.write(hexdump_to_string(mdio_header_bytes,
-                                        f"MDIO Raw Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
-            operation = 'a'
+            # # Append MDIO hexdump to file  
+            # with open(mdio_filename, operation) as f:
+            #     if segy_trace_idx == 0:
+            #         f.write("")  # Start fresh for first trace
+            #     else:
+            #         f.write("\n\n")  # Add spacing between traces
+            #     f.write(hexdump_to_string(mdio_header_bytes,
+            #                             f"MDIO Raw Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
+            # operation = 'a'
              
-            if segy_trace_idx == 0:
-                print(f"\nHeader hexdumps being written for {grid_conf.name}:")
-                print(f"  SEG-Y: {segy_filename}")
-                print(f"  MDIO:  {mdio_filename}")
+            # if segy_trace_idx == 0:
+            #     print(f"\nHeader hexdumps being written for {grid_conf.name}:")
+            #     print(f"  SEG-Y: {segy_filename}")
+            #     print(f"  MDIO:  {mdio_filename}")
                 
             
             segy_trace_idx += 1
