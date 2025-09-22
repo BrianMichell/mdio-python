@@ -166,15 +166,8 @@ def trace_worker(  # noqa: PLR0913
         )
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-        # tmp_raw_headers = np.zeros((traces.header.shape[0], 240), dtype=np.)
         # tmp_raw_headers[not_null] = traces.raw_header
-        np.set_printoptions(threshold=np.inf)
-        # print(traces.header.copy().view("|V240"))
-        # print(len(traces.header.view("|V240")))
-        print(len(traces.header))
         tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")
-        # tmp_raw_headers[not_null] = traces.header.view("|V240")
-        # tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")
 
         ds_to_write[raw_header_key] = Variable(
             ds_to_write[raw_header_key].dims,
