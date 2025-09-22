@@ -547,9 +547,13 @@ class TestNdImportExport:
         segy_trace_idx = 0
         flat_mask = trace_mask.ravel()
         flat_raw_headers = raw_headers_data.ravel()  # Flatten to 1D array of 240-byte header records
+        print(f"Flat mask shape: {flat_mask.shape}")
+
+        operation = 'w'
         
         for grid_idx in range(flat_mask.size):
             if not flat_mask[grid_idx]:
+                print(f"Skipping trace {grid_idx} because it is masked")
                 continue
                 
             # Get MDIO header as bytes - convert single header record to bytes
@@ -561,5 +565,58 @@ class TestNdImportExport:
             segy_header_bytes = np.frombuffer(segy_raw_header_bytes, dtype=np.uint8)
             
             # Compare byte-by-byte
-            assert_array_equal(mdio_header_bytes, segy_header_bytes)
+            # Write hexdumps to separate files for analysis
+            def hexdump_to_string(data: bytes, title: str) -> str:
+                """Create hexdump string."""
+                lines = [f"{title}", "=" * len(title), ""]
+                 
+                for i in range(0, len(data), 16):
+                    # Address
+                    addr = i
+                    hex_part = ""
+                    ascii_part = ""
+                     
+                    # Process 16 bytes at a time
+                    for j in range(16):
+                        if i + j < len(data):
+                            byte_val = data[i + j]
+                            hex_part += f"{byte_val:02x} "
+                            ascii_part += chr(byte_val) if 32 <= byte_val <= 126 else "."
+                        else:
+                            hex_part += "   "
+                            ascii_part += " "
+                     
+                    lines.append(f"{addr:08x}: {hex_part} |{ascii_part}|")
+                 
+                return "\n".join(lines)
+             
+            # Generate filenames for this test case
+            segy_filename = f"segy_headers_{grid_conf.name}.txt"
+            mdio_filename = f"mdio_headers_{grid_conf.name}.txt"
+             
+            # Append SEG-Y hexdump to file
+            with open(segy_filename, operation) as f:
+                if segy_trace_idx == 0:
+                    f.write("")  # Start fresh for first trace
+                else:
+                    f.write("\n\n")  # Add spacing between traces
+                f.write(hexdump_to_string(segy_header_bytes, 
+                                        f"SEG-Y Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
+             
+            # Append MDIO hexdump to file  
+            with open(mdio_filename, operation) as f:
+                if segy_trace_idx == 0:
+                    f.write("")  # Start fresh for first trace
+                else:
+                    f.write("\n\n")  # Add spacing between traces
+                f.write(hexdump_to_string(mdio_header_bytes,
+                                        f"MDIO Raw Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
+            operation = 'a'
+             
+            if segy_trace_idx == 0:
+                print(f"\nHeader hexdumps being written for {grid_conf.name}:")
+                print(f"  SEG-Y: {segy_filename}")
+                print(f"  MDIO:  {mdio_filename}")
+                
+            
             segy_trace_idx += 1

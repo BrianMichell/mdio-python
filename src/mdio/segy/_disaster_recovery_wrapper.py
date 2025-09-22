@@ -28,7 +28,7 @@ class SegyFileTraceDataWrapper:
 
     @property
     def raw_header(self):
-        return np.ascontiguousarray(self.traces.header).view("|V240")
+        return np.ascontiguousarray(self.traces.header.copy()).view("|V240")
 
     @property
     def sample(self):

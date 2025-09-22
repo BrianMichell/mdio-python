@@ -8,7 +8,7 @@ from urllib.request import urlretrieve
 
 import pytest
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 
 # Suppress Dask's chunk balancing warning
 warnings.filterwarnings(
