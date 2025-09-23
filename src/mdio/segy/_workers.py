@@ -147,6 +147,74 @@ def trace_worker(  # noqa: PLR0913
 
     ds_to_write = dataset[worker_variables]
 
+    if raw_header_key in worker_variables:
+        # from segy.schema import HeaderField, ScalarType
+        from segy.schema import HeaderField
+        from segy.schema import ScalarType as ScalarType2
+
+        new_spec = deepcopy(segy_file.spec)
+        new_spec.trace.header.fields = []
+        new_fields = []
+
+        for i in range(240):
+            new_fields.append(HeaderField(name=f"Field_{i}", format=ScalarType.UINT8, byte=i+1))
+
+        # # new_spec.trace.header.fields = new_fields
+        new_spec = new_spec.customize(trace_header_fields=new_fields)
+        updated_segy_file = SegyFile(segy_file.url, spec=new_spec)
+        updated_traces = updated_segy_file.trace[live_trace_indexes]
+
+        tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
+
+
+        # _foo = traces.tobytes()[:240]
+
+        # _asContiguousCopy = np.ascontiguousarray(traces.header.copy()).view("|V240")
+        # _asContiguousCopy1 = _asContiguousCopy[0]
+
+        # _asContiguousNoCopy = np.ascontiguousarray(traces.header).view("|V240")
+        # _asContiguousNoCopy1 = _asContiguousNoCopy[0]
+
+        # _asArrayCopy = traces.header.copy().view("|V240")
+        # _asArrayCopy1 = _asArrayCopy[0]
+
+        # _asArrayNoCopy = traces.header.view("|V240")
+        # _asArrayNoCopy1 = _asArrayNoCopy[0]
+
+        # _fo = type(traces.header)
+
+        # _aahhhhhhh = segy_file.header[0]
+
+    
+
+        # _asBytes = traces.header.tobytes()
+        # _are_equal = _foo == _asBytes[:240]
+        # _asBytesLen = len(_asBytes)
+        # _asContiguousBytes = np.ascontiguousarray(traces.header).tobytes()
+        # _asContiguousBytesLen = len(_asContiguousBytes)
+        # _asContiguousBytesView = np.ascontiguousarray(traces.header[0]).tobytes().view("|V240")
+        # _asBuffer = memoryview(traces.header)
+
+
+        # _type = traces.header.dtype
+
+        # tmp_raw_headers[not_null] = traces.raw_header
+        # tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")
+        # tmp_raw_headers[not_null] = _asContiguousBytes
+        # tmp_raw_headers[not_null] = _asBytes
+        # tmp_raw_headers[not_null] = traces.header.view("|V240")
+        # tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")  # Leaks numpy metadata
+        
+        
+        tmp_raw_headers[not_null] = updated_traces.header.view("|V240")
+
+        ds_to_write[raw_header_key] = Variable(
+            ds_to_write[raw_header_key].dims,
+            tmp_raw_headers,
+            attrs=ds_to_write[raw_header_key].attrs,
+            encoding=ds_to_write[raw_header_key].encoding,  # Not strictly necessary, but safer than not doing it.
+        )
+
     if header_key in worker_variables:
         # TODO(BrianMichell): Implement this better so that we can enable fill values without changing the code
         # https://github.com/TGSAI/mdio-python/issues/584
@@ -163,17 +231,6 @@ def trace_worker(  # noqa: PLR0913
             tmp_headers,
             attrs=ds_to_write[header_key].attrs,
             encoding=ds_to_write[header_key].encoding,  # Not strictly necessary, but safer than not doing it.
-        )
-    if raw_header_key in worker_variables:
-        tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-        # tmp_raw_headers[not_null] = traces.raw_header
-        tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")
-
-        ds_to_write[raw_header_key] = Variable(
-            ds_to_write[raw_header_key].dims,
-            tmp_raw_headers,
-            attrs=ds_to_write[raw_header_key].attrs,
-            encoding=ds_to_write[raw_header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
 
     # del raw_headers  # Manage memory
