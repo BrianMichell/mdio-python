@@ -309,8 +309,6 @@ def raw_headers_env(request: pytest.FixtureRequest) -> None:
     os.environ.pop("MDIO__DO_RAW_HEADERS", None)
 
     # Clean up any template modifications to ensure test isolation
-    from mdio.builder.template_registry import TemplateRegistry
-
     registry = TemplateRegistry.get_instance()
 
     # Reset any templates that might have been modified with raw headers
@@ -543,7 +541,8 @@ class TestNdImportExport:
         # Read raw bytes directly from SEG-Y file
         def read_segy_trace_header(trace_index: int) -> bytes:
             """Read 240-byte trace header directly from SEG-Y file."""
-            with open(segy_path, "rb") as f:
+            # with open(segy_path, "rb") as f:
+            with Path.open(segy_path, "rb") as f:
                 # Skip text (3200) + binary (400) headers = 3600 bytes
                 f.seek(3600)
                 # Each trace: 240 byte header + (num_samples * 4) byte samples
@@ -557,7 +556,7 @@ class TestNdImportExport:
         flat_mask = trace_mask.ravel()
         flat_raw_headers = raw_headers_data.ravel()  # Flatten to 1D array of 240-byte header records
 
-        operation = "w"
+        # operation = "w"
 
         for grid_idx in range(flat_mask.size):
             if not flat_mask[grid_idx]:
