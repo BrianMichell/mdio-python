@@ -288,7 +288,7 @@ def export_masked_path(tmp_path_factory: pytest.TempPathFactory, raw_headers_env
     # raw_headers_env dependency ensures the environment variable is set before this runs
     raw_headers_enabled = os.getenv("MDIO__DO_RAW_HEADERS") == "1"
     path_suffix = "with_raw_headers" if raw_headers_enabled else "without_raw_headers"
-    
+
     if DEBUG_MODE:
         return Path(f"TMP/export_masked_{path_suffix}")
     return tmp_path_factory.getbasetemp() / f"export_masked_{path_suffix}"
@@ -307,16 +307,23 @@ def raw_headers_env(request: pytest.FixtureRequest) -> None:
 
     # Cleanup after test - both environment variable and template state
     os.environ.pop("MDIO__DO_RAW_HEADERS", None)
-    
+
     # Clean up any template modifications to ensure test isolation
     from mdio.builder.template_registry import TemplateRegistry
+
     registry = TemplateRegistry.get_instance()
-    
+
     # Reset any templates that might have been modified with raw headers
-    template_names = ["PostStack2DTime", "PostStack3DTime", "PreStackCdpOffsetGathers2DTime", 
-                     "PreStackCdpOffsetGathers3DTime", "PreStackShotGathers2DTime", 
-                     "PreStackShotGathers3DTime", "PreStackCocaGathers3DTime"]
-    
+    template_names = [
+        "PostStack2DTime",
+        "PostStack3DTime",
+        "PreStackCdpOffsetGathers2DTime",
+        "PreStackCdpOffsetGathers3DTime",
+        "PreStackShotGathers2DTime",
+        "PreStackShotGathers3DTime",
+        "PreStackCocaGathers3DTime",
+    ]
+
     for template_name in template_names:
         try:
             template = registry.get(template_name)
@@ -327,7 +334,7 @@ def raw_headers_env(request: pytest.FixtureRequest) -> None:
                 # We need to restore it to the original method from the class
                 # Since we can't easily restore the exact original, we'll get a fresh instance
                 template_class = type(template)
-                if hasattr(template_class, '_add_variables'):
+                if hasattr(template_class, "_add_variables"):
                     template._add_variables = template_class._add_variables.__get__(template, template_class)
         except KeyError:
             # Template not found, skip
@@ -523,18 +530,20 @@ class TestNdImportExport:
         else:
             assert not has_raw_headers, f"raw_headers should not be present when MDIO__DO_RAW_HEADERS is not set\n {ds}"
             return  # Exit early if raw_headers are not expected
-        
+
         # Get data (only if raw_headers exist)
         raw_headers_data = ds.raw_headers.values
         trace_mask = ds.trace_mask.values
-        
+
         # Verify 240-byte headers
-        assert raw_headers_data.dtype.itemsize == 240, f"Expected 240-byte headers, got {raw_headers_data.dtype.itemsize}"
-        
+        assert raw_headers_data.dtype.itemsize == 240, (
+            f"Expected 240-byte headers, got {raw_headers_data.dtype.itemsize}"
+        )
+
         # Read raw bytes directly from SEG-Y file
         def read_segy_trace_header(trace_index: int) -> bytes:
             """Read 240-byte trace header directly from SEG-Y file."""
-            with open(segy_path, 'rb') as f:
+            with open(segy_path, "rb") as f:
                 # Skip text (3200) + binary (400) headers = 3600 bytes
                 f.seek(3600)
                 # Each trace: 240 byte header + (num_samples * 4) byte samples
@@ -542,41 +551,41 @@ class TestNdImportExport:
                 trace_offset = trace_index * trace_size
                 f.seek(trace_offset, 1)  # Seek relative to current position
                 return f.read(240)
-        
+
         # Compare all valid traces byte-by-byte
         segy_trace_idx = 0
         flat_mask = trace_mask.ravel()
         flat_raw_headers = raw_headers_data.ravel()  # Flatten to 1D array of 240-byte header records
 
-        operation = 'w'
-        
+        operation = "w"
+
         for grid_idx in range(flat_mask.size):
             if not flat_mask[grid_idx]:
                 print(f"Skipping trace {grid_idx} because it is masked")
                 continue
-                
+
             # Get MDIO header as bytes - convert single header record to bytes
             header_record = flat_raw_headers[grid_idx]
             mdio_header_bytes = np.frombuffer(header_record.tobytes(), dtype=np.uint8)
-            
+
             # Get SEG-Y header as raw bytes directly from file
             segy_raw_header_bytes = read_segy_trace_header(segy_trace_idx)
             segy_header_bytes = np.frombuffer(segy_raw_header_bytes, dtype=np.uint8)
 
             assert_array_equal(mdio_header_bytes, segy_header_bytes)
-            
+
             # Compare byte-by-byte
             # Write hexdumps to separate files for analysis
             # def hexdump_to_string(data: bytes, title: str) -> str:
             #     """Create hexdump string."""
             #     lines = [f"{title}", "=" * len(title), ""]
-                 
+
             #     for i in range(0, len(data), 16):
             #         # Address
             #         addr = i
             #         hex_part = ""
             #         ascii_part = ""
-                     
+
             #         # Process 16 bytes at a time
             #         for j in range(16):
             #             if i + j < len(data):
@@ -586,25 +595,25 @@ class TestNdImportExport:
             #             else:
             #                 hex_part += "   "
             #                 ascii_part += " "
-                     
+
             #         lines.append(f"{addr:08x}: {hex_part} |{ascii_part}|")
-                 
+
             #     return "\n".join(lines)
-             
+
             # # Generate filenames for this test case
             # segy_filename = f"segy_headers_{grid_conf.name}.txt"
             # mdio_filename = f"mdio_headers_{grid_conf.name}.txt"
-             
+
             # # Append SEG-Y hexdump to file
             # with open(segy_filename, operation) as f:
             #     if segy_trace_idx == 0:
             #         f.write("")  # Start fresh for first trace
             #     else:
             #         f.write("\n\n")  # Add spacing between traces
-            #     f.write(hexdump_to_string(segy_header_bytes, 
+            #     f.write(hexdump_to_string(segy_header_bytes,
             #                             f"SEG-Y Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
-             
-            # # Append MDIO hexdump to file  
+
+            # # Append MDIO hexdump to file
             # with open(mdio_filename, operation) as f:
             #     if segy_trace_idx == 0:
             #         f.write("")  # Start fresh for first trace
@@ -613,11 +622,10 @@ class TestNdImportExport:
             #     f.write(hexdump_to_string(mdio_header_bytes,
             #                             f"MDIO Raw Header - {grid_conf.name} Trace {segy_trace_idx} (240 bytes)"))
             # operation = 'a'
-             
+
             # if segy_trace_idx == 0:
             #     print(f"\nHeader hexdumps being written for {grid_conf.name}:")
             #     print(f"  SEG-Y: {segy_filename}")
             #     print(f"  MDIO:  {mdio_filename}")
-                
-            
+
             segy_trace_idx += 1

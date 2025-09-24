@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -21,9 +20,6 @@ from segy.schema import SegySpec
 from segy.standards import get_segy_standard
 
 from mdio.segy._disaster_recovery_wrapper import SegyFileTraceDataWrapper
-
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
 
 SAMPLES_PER_TRACE = 1501
 
@@ -118,10 +114,7 @@ class TestDisasterRecoveryWrapper:
 
         return spec
 
-
-    def test_wrapper_basic_functionality(
-        self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict
-    ) -> None:
+    def test_wrapper_basic_functionality(self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict) -> None:
         """Test basic functionality of SegyFileTraceDataWrapper."""
         config_name = segy_config["name"]
         endianness = segy_config["endianness"]
@@ -160,14 +153,12 @@ class TestDisasterRecoveryWrapper:
 
         # Raw header should be bytes (240 bytes per trace header)
         assert raw_header.dtype == np.dtype("|V240")
-        
+
         # Transformed header should have the expected fields
         assert "inline" in transformed_header.dtype.names
         assert "crossline" in transformed_header.dtype.names
 
-    def test_wrapper_with_multiple_traces(
-        self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict
-    ) -> None:
+    def test_wrapper_with_multiple_traces(self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict) -> None:
         """Test wrapper with multiple traces."""
         config_name = segy_config["name"]
         endianness = segy_config["endianness"]
@@ -297,9 +288,7 @@ class TestDisasterRecoveryWrapper:
 
         assert wrapper.header.size == expected_count
 
-    def test_header_pipeline_preservation(
-        self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict
-    ) -> None:
+    def test_header_pipeline_preservation(self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict) -> None:
         """Test that the wrapper preserves the original header pipeline."""
         config_name = segy_config["name"]
         endianness = segy_config["endianness"]
@@ -322,7 +311,7 @@ class TestDisasterRecoveryWrapper:
 
         # Load the SEGY file
         segy_file = SegyFile(segy_path, spec=spec)
-        
+
         # Store original pipeline transforms count
         original_transforms_count = len(segy_file.accessors.header_decode_pipeline.transforms)
 
@@ -331,6 +320,6 @@ class TestDisasterRecoveryWrapper:
 
         # Verify that the original SEGY file's pipeline was modified (transforms cleared)
         assert len(segy_file.accessors.header_decode_pipeline.transforms) == 0
-        
+
         # Verify that the wrapper has its own pipeline with the original transforms
         assert len(wrapper._header_pipeline.transforms) == original_transforms_count

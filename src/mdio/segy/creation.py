@@ -30,34 +30,33 @@ logger = logging.getLogger(__name__)
 
 def _filter_raw_unspecified_fields(headers: NDArray) -> NDArray:
     """Filter out __MDIO_RAW_UNSPECIFIED_Field_* fields from headers array.
-    
+
     These fields are added during SEGY import to preserve raw header bytes,
     but they cause dtype mismatches during export. This function removes them.
-    
+
     Args:
         headers: Header array that may contain raw unspecified fields.
-        
+
     Returns:
         Header array with raw unspecified fields removed.
     """
     if headers.dtype.names is None:
         return headers
-        
+
     # Find field names that don't start with __MDIO_RAW_UNSPECIFIED_
-    field_names = [name for name in headers.dtype.names 
-                   if not name.startswith("__MDIO_RAW_UNSPECIFIED_")]
-    
+    field_names = [name for name in headers.dtype.names if not name.startswith("__MDIO_RAW_UNSPECIFIED_")]
+
     if len(field_names) == len(headers.dtype.names):
         # No raw unspecified fields found, return as-is
         return headers
-    
+
     # Create new structured array with only the non-raw fields
     new_dtype = [(name, headers.dtype.fields[name][0]) for name in field_names]
     filtered_headers = np.empty(headers.shape, dtype=new_dtype)
-    
+
     for name in field_names:
         filtered_headers[name] = headers[name]
-        
+
     return filtered_headers
 
 

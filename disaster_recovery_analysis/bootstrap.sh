@@ -59,7 +59,7 @@ if [ $# -eq 1 ]; then
     ZARR_PATH="$1"
     echo "=== Running hexdump on provided path: $ZARR_PATH ==="
     echo
-    
+
     if [ -e "$ZARR_PATH" ]; then
         ./target/release/zarr-hexdump "$ZARR_PATH"
     else

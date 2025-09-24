@@ -1,11 +1,13 @@
 if __name__ == "__main__":
-    import mdio
-    from segy.standards import get_segy_standard
-    from segy.schema import HeaderField, Endianness
-    import os
-    from mdio.builder.template_registry import TemplateRegistry
-
     import logging
+    import os
+
+    from segy.schema import Endianness
+    from segy.schema import HeaderField
+    from segy.standards import get_segy_standard
+
+    import mdio
+    from mdio.builder.template_registry import TemplateRegistry
 
     logging.getLogger("segy").setLevel(logging.DEBUG)
 
