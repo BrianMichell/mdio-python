@@ -371,15 +371,19 @@ def _scalar_to_size(scalar: ScalarType2) -> int:
         raise ValueError(f"Invalid scalar type: {scalar}")
 
 def _customize_segy_spec(segy_spec: SegySpec) -> SegySpec:
+    from copy import deepcopy
     assigned_bytes = []
+
+    ret = deepcopy(segy_spec)
+
     for field in segy_spec.trace.header.fields:
         byte = field.byte-1
         for i in range(byte, byte + _scalar_to_size(field.format)):
             assigned_bytes.append(i)
     unassigned_bytes = [i for i in range(240) if i not in assigned_bytes]
-    field_to_customize = [HeaderField(name=f"Field_{i}", format=ScalarType.UINT8, byte=i+1) for i in unassigned_bytes]
-    segy_spec = segy_spec.customize(trace_header_fields=field_to_customize)
-    return segy_spec
+    field_to_customize = [HeaderField(name=f"__MDIO_RAW_UNSPECIFIED_Field_{i}", format=ScalarType.UINT8, byte=i+1) for i in unassigned_bytes]
+    ret = ret.customize(trace_header_fields=field_to_customize)
+    return ret
 
 
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
