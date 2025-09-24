@@ -345,10 +345,13 @@ def _add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, A
 
 
 def _scalar_to_size(scalar: ScalarType2) -> int:
+    # TODO(BrianMichell): #0000 Lazy way to support conversion.
     if scalar == ScalarType2.STRING8:
         return 8
-
-    return str(scalar).split(".")[1] % 8
+    try:
+        return int(str(scalar)[-2:]) // 8
+    except ValueError:
+        return 1
 
 
 def _customize_segy_spec(segy_spec: SegySpec) -> SegySpec:
