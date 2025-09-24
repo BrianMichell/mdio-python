@@ -12,7 +12,6 @@ from segy import SegyFile
 
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.dtype import ScalarType
-from mdio.segy._disaster_recovery_wrapper import SegyFileTraceDataWrapper
 
 if TYPE_CHECKING:
     from segy.arrays import HeaderArray
@@ -141,6 +140,7 @@ def trace_worker(  # noqa: PLR0913
     # NOTE: The `raw_header_key` code block should be removed in full as it will become dead code.
     # traces = SegyFileTraceDataWrapper(segy_file, live_trace_indexes)
     from copy import deepcopy
+
     header_pipeline = deepcopy(segy_file.accessors.header_decode_pipeline)
     segy_file.accessors.header_decode_pipeline.transforms = []
     traces = segy_file.trace[live_trace_indexes]

@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import logging
 import os
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 import numpy as np
 import zarr
 from segy import SegyFile
 from segy.config import SegySettings
-from segy.standards.codes import MeasurementSystem as segy_MeasurementSystem
-from segy.standards.fields.trace import Rev0 as TraceHeaderFieldsRev0
 from segy.schema import HeaderField
 from segy.schema import ScalarType as ScalarType2
+from segy.standards.codes import MeasurementSystem as segy_MeasurementSystem
+from segy.standards.fields.trace import Rev0 as TraceHeaderFieldsRev0
 
 from mdio.api.io import _normalize_path
 from mdio.api.io import to_mdio
@@ -342,48 +343,29 @@ def _add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, A
     if grid_overrides is not None:
         dataset.metadata.attributes["gridOverrides"] = grid_overrides
 
+
 def _scalar_to_size(scalar: ScalarType2) -> int:
-    if scalar == ScalarType2.UINT8:
-        return 1
-    elif scalar == ScalarType2.UINT16:
-        return 2
-    elif scalar == ScalarType2.UINT32:
-        return 4
-    elif scalar == ScalarType2.UINT64:
+    if scalar == ScalarType2.STRING8:
         return 8
-    elif scalar == ScalarType2.INT8:
-        return 1
-    elif scalar == ScalarType2.INT16:
-        return 2
-    elif scalar == ScalarType2.INT32:
-        return 4
-    elif scalar == ScalarType2.INT64:
-        return 8
-    elif scalar == ScalarType2.FLOAT32:
-        return 4
-    elif scalar == ScalarType2.FLOAT64:
-        return 8
-    elif scalar == ScalarType2.FLOAT16:
-        return 2
-    elif scalar == ScalarType2.STRING8:
-        return 8
-    else:
-        raise ValueError(f"Invalid scalar type: {scalar}")
+
+    return str(scalar).split(".")[1] % 8
+
 
 def _customize_segy_spec(segy_spec: SegySpec) -> SegySpec:
-    from copy import deepcopy
     assigned_bytes = []
 
     ret = deepcopy(segy_spec)
 
     for field in segy_spec.trace.header.fields:
-        byte = field.byte-1
+        byte = field.byte - 1
         for i in range(byte, byte + _scalar_to_size(field.format)):
-            assigned_bytes.append(i)
+            assigned_bytes.append(i)  # noqa: PERF402
     unassigned_bytes = [i for i in range(240) if i not in assigned_bytes]
-    field_to_customize = [HeaderField(name=f"__MDIO_RAW_UNSPECIFIED_Field_{i}", format=ScalarType.UINT8, byte=i+1) for i in unassigned_bytes]
-    ret = ret.customize(trace_header_fields=field_to_customize)
-    return ret
+    field_to_customize = [
+        HeaderField(name=f"__MDIO_RAW_UNSPECIFIED_Field_{i}", format=ScalarType.UINT8, byte=i + 1)
+        for i in unassigned_bytes
+    ]
+    return ret.customize(trace_header_fields=field_to_customize)
 
 
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
