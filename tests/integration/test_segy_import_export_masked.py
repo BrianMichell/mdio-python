@@ -547,7 +547,6 @@ class TestNdImportExport:
         segy_trace_idx = 0
         flat_mask = trace_mask.ravel()
         flat_raw_headers = raw_headers_data.ravel()  # Flatten to 1D array of 240-byte header records
-        print(f"Flat mask shape: {flat_mask.shape}")
 
         operation = 'w'
         
