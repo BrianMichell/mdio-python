@@ -149,45 +149,7 @@ def trace_worker(  # noqa: PLR0913
 
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-
-        # _foo = traces.tobytes()[:240]
-
-        # _asContiguousCopy = np.ascontiguousarray(traces.header.copy()).view("|V240")
-        # _asContiguousCopy1 = _asContiguousCopy[0]
-
-        # _asContiguousNoCopy = np.ascontiguousarray(traces.header).view("|V240")
-        # _asContiguousNoCopy1 = _asContiguousNoCopy[0]
-
-        # _asArrayCopy = traces.header.copy().view("|V240")
-        # _asArrayCopy1 = _asArrayCopy[0]
-
-        # _asArrayNoCopy = traces.header.view("|V240")
-        # _asArrayNoCopy1 = _asArrayNoCopy[0]
-
-        # _fo = type(traces.header)
-
-        # _aahhhhhhh = segy_file.header[0]
-
-        # _asBytes = traces.header.tobytes()
-        # _are_equal = _foo == _asBytes[:240]
-        # _asBytesLen = len(_asBytes)
-        # _asContiguousBytes = np.ascontiguousarray(traces.header).tobytes()
-        # _asContiguousBytesLen = len(_asContiguousBytes)
-        # _asContiguousBytesView = np.ascontiguousarray(traces.header[0]).tobytes().view("|V240")
-        # _asBuffer = memoryview(traces.header)
-
-        # _type = traces.header.dtype
-
-        # tmp_raw_headers[not_null] = traces.raw_header
-        # tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy(order="C")).view("|V240")
         tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")
-        # tmp_raw_headers[not_null] = _asContiguousBytes
-        # tmp_raw_headers[not_null] = _asBytes
-        # tmp_raw_headers[not_null] = traces.header.view("|V240")
-        # tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")  # Leaks numpy metadata
-        
-        
-        # tmp_raw_headers[not_null] = updated_traces.header.view("|V240")
 
         ds_to_write[raw_header_key] = Variable(
             ds_to_write[raw_header_key].dims,
@@ -214,7 +176,6 @@ def trace_worker(  # noqa: PLR0913
             encoding=ds_to_write[header_key].encoding,  # Not strictly necessary, but safer than not doing it.
         )
 
-    # del raw_headers  # Manage memory
     data_variable = ds_to_write[data_variable_name]
     fill_value = _get_fill_value(ScalarType(data_variable.dtype.name))
     tmp_samples = np.full_like(data_variable, fill_value=fill_value)
