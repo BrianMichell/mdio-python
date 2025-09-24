@@ -12,6 +12,7 @@ from segy import SegyFile
 
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.dtype import ScalarType
+from mdio.segy._disaster_recovery_wrapper import SegyFileTraceDataWrapper
 
 if TYPE_CHECKING:
     from segy.arrays import HeaderArray
@@ -138,18 +139,13 @@ def trace_worker(  # noqa: PLR0913
     # For that reason, we have wrapped the accessors to provide an interface that can be removed
     # and not require additional changes to the below code.
     # NOTE: The `raw_header_key` code block should be removed in full as it will become dead code.
-    # traces = SegyFileTraceDataWrapper(segy_file, live_trace_indexes)
-    from copy import deepcopy
-
-    header_pipeline = deepcopy(segy_file.accessors.header_decode_pipeline)
-    segy_file.accessors.header_decode_pipeline.transforms = []
-    traces = segy_file.trace[live_trace_indexes]
+    traces = SegyFileTraceDataWrapper(segy_file, live_trace_indexes)
 
     ds_to_write = dataset[worker_variables]
 
     if raw_header_key in worker_variables:
         tmp_raw_headers = np.zeros_like(dataset[raw_header_key])
-        tmp_raw_headers[not_null] = np.ascontiguousarray(traces.header.copy()).view("|V240")
+        tmp_raw_headers[not_null] = traces.raw_header
 
         ds_to_write[raw_header_key] = Variable(
             ds_to_write[raw_header_key].dims,
@@ -162,8 +158,7 @@ def trace_worker(  # noqa: PLR0913
         # TODO(BrianMichell): Implement this better so that we can enable fill values without changing the code
         # https://github.com/TGSAI/mdio-python/issues/584
         tmp_headers = np.zeros_like(dataset[header_key])
-        # tmp_headers[not_null] = traces.header
-        tmp_headers[not_null] = header_pipeline.apply(traces.header.copy())
+        tmp_headers[not_null] = traces.header
         # Create a new Variable object to avoid copying the temporary array
         # The ideal solution is to use `ds_to_write[header_key][:] = tmp_headers`
         # but Xarray appears to be copying memory instead of doing direct assignment.
