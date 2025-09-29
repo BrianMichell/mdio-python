@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
-from copy import deepcopy
 from typing import TYPE_CHECKING
 
 import numpy as np
 import zarr
 from segy import SegyFile
 from segy.config import SegySettings
-from segy.schema import HeaderField
-from segy.schema import ScalarType as ScalarType2
 from segy.standards.codes import MeasurementSystem as segy_MeasurementSystem
 from segy.standards.fields.trace import Rev0 as TraceHeaderFieldsRev0
 
@@ -344,33 +341,6 @@ def _add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, A
         dataset.metadata.attributes["gridOverrides"] = grid_overrides
 
 
-def _scalar_to_size(scalar: ScalarType2) -> int:
-    # TODO(BrianMichell): #0000 Lazy way to support conversion.
-    if scalar == ScalarType2.STRING8:
-        return 8
-    try:
-        return int(str(scalar)[-2:]) // 8
-    except ValueError:
-        return 1
-
-
-def _customize_segy_spec(segy_spec: SegySpec) -> SegySpec:
-    assigned_bytes = []
-
-    ret = deepcopy(segy_spec)
-
-    for field in segy_spec.trace.header.fields:
-        byte = field.byte - 1
-        for i in range(byte, byte + _scalar_to_size(field.format)):
-            assigned_bytes.append(i)  # noqa: PERF402
-    unassigned_bytes = [i for i in range(240) if i not in assigned_bytes]
-    field_to_customize = [
-        HeaderField(name=f"__MDIO_RAW_UNSPECIFIED_Field_{i}", format=ScalarType.UINT8, byte=i + 1)
-        for i in unassigned_bytes
-    ]
-    return ret.customize(trace_header_fields=field_to_customize)
-
-
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
     """Add raw headers capability to the MDIO template by monkey-patching its _add_variables method.
 
@@ -450,9 +420,6 @@ def segy_to_mdio(  # noqa PLR0913
     """
     input_path = _normalize_path(input_path)
     output_path = _normalize_path(output_path)
-
-    if os.getenv("MDIO__DO_RAW_HEADERS") == "1":
-        segy_spec = _customize_segy_spec(segy_spec)
 
     if not overwrite and output_path.exists():
         err = f"Output location '{output_path.as_posix()}' exists. Set `overwrite=True` if intended."
