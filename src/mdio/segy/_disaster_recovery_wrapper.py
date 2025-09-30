@@ -19,7 +19,6 @@ class SegyFileTraceDataWrapper:
         self.raw_view = self.traces.view(self.segy_file.spec.trace.dtype)
         self.decoded_traces = self.segy_file.accessors.trace_decode_pipeline.apply(self.raw_view.copy())
 
-
     @property
     def raw_header(self) -> NDArray:
         return self.raw_view.header.view("|V240")

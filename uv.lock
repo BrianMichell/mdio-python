@@ -1922,7 +1922,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.9" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "s3fs", marker = "extra == 'cloud'", specifier = ">=2025.9.0" },
-    { name = "segy", git = "https://github.com/TGSAI/segy.git?rev=fe82079fb463c0923b47227fe38bdc8b6c1ecee5" },
+    { name = "segy", specifier = ">=0.5.1.post1" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "universal-pathlib", specifier = ">=0.2.6" },
     { name = "xarray", specifier = ">=2025.9.1" },
@@ -3198,8 +3198,8 @@ wheels = [
 
 [[package]]
 name = "segy"
-version = "0.5.0.post1"
-source = { git = "https://github.com/TGSAI/segy.git?rev=fe82079fb463c0923b47227fe38bdc8b6c1ecee5#fe82079fb463c0923b47227fe38bdc8b6c1ecee5" }
+version = "0.5.1.post1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
     { name = "numba" },
@@ -3209,6 +3209,10 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "rapidfuzz" },
     { name = "typer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/c5/c71d4f52eb1587bdeb8401445ac65b08603fb6f77ada46933dec5fbbd6f8/segy-0.5.1.post1.tar.gz", hash = "sha256:655d1b26aa7a698084d190c8b5c7d12802cfbc9627067614606b1d69c5f0f4ae", size = 43354, upload-time = "2025-09-30T20:35:19.879Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/ff/ee1b5c982ddfb7185fac41b85ce7a8bd2d5604d6129183a63c2a851109d3/segy-0.5.1.post1-py3-none-any.whl", hash = "sha256:6f36a0795c459d77a3d715d7e5b1444be4cb8368720f89111d452be93d1cf7f1", size = 55757, upload-time = "2025-09-30T20:35:18.665Z" },
 ]
 
 [[package]]

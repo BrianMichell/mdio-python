@@ -287,4 +287,3 @@ class TestDisasterRecoveryWrapper:
             expected_count = 1
 
         assert wrapper.header.size == expected_count
-
