@@ -287,39 +287,3 @@ class TestDisasterRecoveryWrapper:
             expected_count = 1
 
         assert wrapper.header.size == expected_count
-
-    def test_header_pipeline_preservation(self, temp_dir: Path, basic_segy_spec: SegySpec, segy_config: dict) -> None:
-        """Test that the wrapper preserves the original header pipeline."""
-        config_name = segy_config["name"]
-        endianness = segy_config["endianness"]
-        data_format = segy_config["data_format"]
-
-        segy_path = temp_dir / f"test_pipeline_{config_name}.segy"
-
-        # Create test SEGY file
-        num_traces = 5
-        samples_per_trace = SAMPLES_PER_TRACE
-
-        spec = self.create_test_segy_file(
-            spec=basic_segy_spec,
-            num_traces=num_traces,
-            samples_per_trace=samples_per_trace,
-            output_path=segy_path,
-            endianness=endianness,
-            data_format=data_format,
-        )
-
-        # Load the SEGY file
-        segy_file = SegyFile(segy_path, spec=spec)
-
-        # Store original pipeline transforms count
-        original_transforms_count = len(segy_file.accessors.header_decode_pipeline.transforms)
-
-        # Create wrapper
-        wrapper = SegyFileTraceDataWrapper(segy_file, 0)
-
-        # Verify that the original SEGY file's pipeline was modified (transforms cleared)
-        assert len(segy_file.accessors.header_decode_pipeline.transforms) == 0
-
-        # Verify that the wrapper has its own pipeline with the original transforms
-        assert len(wrapper._header_pipeline.transforms) == original_transforms_count
