@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from segy import SegyFile
@@ -13,6 +14,7 @@ class SegyFileTraceDataWrapper:
     def __init__(self, segy_file: SegyFile, indices: int | list[int] | NDArray | slice):
         self.segy_file = segy_file
         self.indices = indices
+
         self.idx = self.segy_file.trace.normalize_and_validate_query(self.indices)
         self.traces = self.segy_file.trace.fetch(self.idx, raw=True)
 
