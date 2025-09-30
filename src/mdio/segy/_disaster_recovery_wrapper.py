@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import TYPE_CHECKING
-
-import numpy as np
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -16,19 +13,21 @@ class SegyFileTraceDataWrapper:
     def __init__(self, segy_file: SegyFile, indices: int | list[int] | NDArray | slice):
         self.segy_file = segy_file
         self.indices = indices
-        self._header_pipeline = deepcopy(segy_file.accessors.header_decode_pipeline)
-        segy_file.accessors.header_decode_pipeline.transforms = []
-        self.traces = segy_file.trace[indices]
+        self.idx = self.segy_file.trace.normalize_and_validate_query(self.indices)
+        self.traces = self.segy_file.trace.fetch(self.idx, raw=True)
 
-    @property
-    def header(self) -> NDArray:
-        # The copy is necessary to avoid applying the pipeline to the original header.
-        return self._header_pipeline.apply(self.traces.header.copy())
+        self.raw_view = self.traces.view(self.segy_file.spec.trace.dtype)
+        self.decoded_traces = self.segy_file.accessors.trace_decode_pipeline.apply(self.raw_view.copy())
+
 
     @property
     def raw_header(self) -> NDArray:
-        return np.ascontiguousarray(self.traces.header.copy()).view("|V240")
+        return self.raw_view.header.view("|V240")
+
+    @property
+    def header(self) -> NDArray:
+        return self.decoded_traces.header
 
     @property
     def sample(self) -> NDArray:
-        return self.traces.sample
+        return self.decoded_traces.sample
