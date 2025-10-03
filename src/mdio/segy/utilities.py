@@ -54,7 +54,7 @@ def _create_delayed_trace_dimension_transform(headers_subset: HeaderArray, posit
 
         # Add the trace dimension
         trace_dimension = NamedDimension(name="trace", size=trace_size)
-        builder.push_dimension(trace_dimension, position=position, new_dim_chunk_size=1, new_dim_size=trace_size)
+        builder.push_dimension(trace_dimension, position=position, new_dim_chunk_size=1)
 
         # Add the corresponding coordinate for the trace dimension
         builder.add_coordinate(
