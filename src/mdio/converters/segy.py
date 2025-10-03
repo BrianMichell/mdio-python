@@ -497,8 +497,6 @@ def segy_to_mdio(  # noqa PLR0913
             logger.warning("MDIO__IMPORT__RAW_HEADERS is experimental and expected to change or be removed.")
             mdio_template = _add_raw_headers_to_template(mdio_template)
 
-    print(grid)
-
     # When HasDuplicates is True, the grid includes a "trace" dimension that will be
     # added to the dataset via a queued transform. We need to exclude it from the sizes
     # passed to build_dataset to avoid dimension size mismatches.
