@@ -68,6 +68,7 @@ class AbstractDatasetTemplate(ABC):
             Dataset: The constructed dataset
         """
         self._dim_sizes = sizes
+        print(f"Sizes: {self._dim_sizes}")
         self._horizontal_coord_unit = horizontal_coord_unit
 
         attributes = self._load_dataset_attributes() or {}
@@ -80,6 +81,8 @@ class AbstractDatasetTemplate(ABC):
         if header_dtype:
             self._add_trace_headers(header_dtype)
 
+
+        # This seems to be breaking the dataset, but adds the trace dimension.
         for transform in self._queued_transforms:
             logger.debug(f"Applying transform: {transform.__name__}")
             transform(self._builder)
