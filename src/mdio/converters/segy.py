@@ -262,8 +262,9 @@ def populate_dim_coordinates(
 ) -> tuple[xr_Dataset, list[str]]:
     """Populate the xarray dataset with dimension coordinate variables."""
     for dim in grid.dims:
-        dataset[dim.name].values[:] = dim.coords
-        drop_vars_delayed.append(dim.name)
+        if dim.name in dataset.dims:
+            dataset[dim.name].values[:] = dim.coords
+            drop_vars_delayed.append(dim.name)
     return dataset, drop_vars_delayed
 
 
@@ -508,9 +509,18 @@ def segy_to_mdio(  # noqa PLR0913
 
     print(grid)
 
+    # When HasDuplicates is True, the grid includes a "trace" dimension that will be
+    # added to the dataset via a queued transform. We need to exclude it from the sizes
+    # passed to build_dataset to avoid dimension size mismatches.
+    dataset_sizes = grid.shape
+    if "trace" in grid.dim_names:
+        # Find the trace dimension index and remove it from sizes
+        trace_idx = grid.dim_names.index("trace")
+        dataset_sizes = grid.shape[:trace_idx] + grid.shape[trace_idx + 1:]
+
     mdio_ds: Dataset = mdio_template.build_dataset(
         name=mdio_template.name,
-        sizes=grid.shape,
+        sizes=dataset_sizes,
         horizontal_coord_unit=_get_horizontal_coordinate_unit(segy_dimensions),
         header_dtype=to_structured_type(segy_spec.trace.header.dtype),
     )

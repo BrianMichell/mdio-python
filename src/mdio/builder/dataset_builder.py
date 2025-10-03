@@ -125,17 +125,8 @@ class MDIODatasetBuilder:
             msg = "New dimension chunk size must be greater than 0"
             raise ValueError(msg)
 
-        print(f"Setting position {position} to size {new_dim_size}")
-        print(f"Before: {self._dimensions}")
-
         # In-place insertion of the dimension to the existing list of dimensions
         self._dimensions.insert(position, dimension)
-        print(f"After: {self._dimensions}")
-
-        # print(f"Setting position {position} to size {new_dim_size}")
-        # print(self._dimensions)
-        # self._dimensions[position].size = new_dim_size
-        # print(self._dimensions)
 
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
@@ -165,8 +156,6 @@ class MDIODatasetBuilder:
         to_ignore = []
         for v in self._dimensions:
             to_ignore.append(v.name)
-        for c in self._coordinates:
-            to_ignore.append(c.name)
 
         for i in range(len(self._variables)):
             var = self._variables[i]

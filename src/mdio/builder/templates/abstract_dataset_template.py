@@ -68,7 +68,6 @@ class AbstractDatasetTemplate(ABC):
             Dataset: The constructed dataset
         """
         self._dim_sizes = sizes
-        print(f"Sizes: {self._dim_sizes}")
         self._horizontal_coord_unit = horizontal_coord_unit
 
         attributes = self._load_dataset_attributes() or {}
@@ -160,6 +159,10 @@ class AbstractDatasetTemplate(ABC):
         """
         for i in range(len(self._dim_names)):
             self._builder.add_dimension(self._dim_names[i], self._dim_sizes[i])
+
+        for i in range(len(self._dim_sizes) - len(self._dim_names)):
+            self._builder.add_dimension(f"dim_{i}", self._dim_sizes[len(self._dim_names) + i])
+
 
     def _add_coordinates(self) -> None:
         """Add custom coordinates.
