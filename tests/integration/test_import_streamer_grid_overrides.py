@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import dask
 import numpy as np
-import numpy.testing as npt
 import pytest
 import xarray.testing as xrt
 from tests.integration.conftest import get_segy_mock_4d_spec

@@ -247,7 +247,9 @@ def create_trace_index(
     return index_headers
 
 
-def analyze_non_indexed_headers(index_headers: HeaderArray, dtype: DTypeLike = np.int16, index_names: Sequence[str] = None) -> NDArray:
+def analyze_non_indexed_headers(
+    index_headers: HeaderArray, dtype: DTypeLike = np.int16, index_names: Sequence[str] = None
+) -> NDArray:
     """Check input headers for SEG-Y input to help determine geometry.
 
     This function reads in trace_qc_count headers and finds the unique cable values. Then, it
@@ -436,7 +438,7 @@ class AutoChannelWrap(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
-        index_names = None,
+        index_names=None,
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
@@ -474,7 +476,7 @@ class AutoShotWrap(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
-        index_names = None,
+        index_names=None,
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
@@ -538,7 +540,6 @@ class GridOverrider:
         chunksize: Sequence[int] | None = None,
     ) -> tuple[HeaderArray, tuple[str], tuple[int]]:
         """Run grid overrides and return result."""
-
         for override in grid_overrides:
             if override in self.parameters:
                 continue

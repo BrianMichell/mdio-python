@@ -101,7 +101,9 @@ class MDIODatasetBuilder:
         self._state = _BuilderState.HAS_DIMENSIONS
         return self
 
-    def push_dimension(self, dimension: NamedDimension, position: int, new_dim_chunk_size: int=1, new_dim_size: int=1) -> "MDIODatasetBuilder":
+    def push_dimension(
+        self, dimension: NamedDimension, position: int, new_dim_chunk_size: int = 1, new_dim_size: int = 1
+    ) -> "MDIODatasetBuilder":
         """Pushes a dimension to all Coordiantes and Variables.
         The position argument is the domain index of the dimension to push.
         If a Variable is within the position domain, it will be inserted at the position and all remaining dimensions will be shifted to the right.
@@ -130,23 +132,25 @@ class MDIODatasetBuilder:
 
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
-            from mdio.builder.schemas.chunk_grid import RegularChunkGrid, RegularChunkShape
+            from mdio.builder.schemas.chunk_grid import RegularChunkGrid
+            from mdio.builder.schemas.chunk_grid import RegularChunkShape
+
             if len(variable.dimensions) + 1 <= position:
                 # Don't do anything if the new dimension is not within the Variable's domain
                 return variable
             new_dimensions = variable.dimensions[:position] + [dimension] + variable.dimensions[position:]
-            
+
             # Get current chunk shape from metadata
             current_chunk_shape = (1,) * len(variable.dimensions)  # Default fallback
             if variable.metadata is not None and variable.metadata.chunk_grid is not None:
                 current_chunk_shape = variable.metadata.chunk_grid.configuration.chunk_shape
-            
+
             # Insert new chunk size at the correct position
             new_chunk_shape = current_chunk_shape[:position] + (new_dim_chunk_size,) + current_chunk_shape[position:]
-            
+
             # Create new chunk grid configuration
             new_chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=new_chunk_shape))
-            
+
             # Update metadata with new chunk grid
             new_metadata = variable.metadata.model_copy() if variable.metadata else VariableMetadata()
             new_metadata.chunk_grid = new_chunk_grid

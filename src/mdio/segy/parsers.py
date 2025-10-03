@@ -11,11 +11,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from psutil import cpu_count
+from segy.arrays import HeaderArray
 from tqdm.auto import tqdm
 
 from mdio.segy._workers import header_scan_worker
 
-from segy.arrays import HeaderArray
 if TYPE_CHECKING:
     from segy import SegyFile
 

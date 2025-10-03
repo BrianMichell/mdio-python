@@ -1,11 +1,11 @@
 """Template method pattern implementation for MDIO v1 dataset template."""
 
 import copy
+import logging
 from abc import ABC
 from abc import abstractmethod
-import logging
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 
 from mdio.builder.dataset_builder import MDIODatasetBuilder
 from mdio.builder.schemas import compressors
@@ -20,6 +20,7 @@ from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.types import SeismicDataDomain
 
 logger = logging.getLogger(__name__)
+
 
 class AbstractDatasetTemplate(ABC):
     """Abstract base class that defines the template method for Dataset building factory.
@@ -79,7 +80,6 @@ class AbstractDatasetTemplate(ABC):
         self._add_trace_mask()
         if header_dtype:
             self._add_trace_headers(header_dtype)
-
 
         # This seems to be breaking the dataset, but adds the trace dimension.
         for transform in self._queued_transforms:
@@ -162,7 +162,6 @@ class AbstractDatasetTemplate(ABC):
 
         for i in range(len(self._dim_sizes) - len(self._dim_names)):
             self._builder.add_dimension(f"dim_{i}", self._dim_sizes[len(self._dim_names) + i])
-
 
     def _add_coordinates(self) -> None:
         """Add custom coordinates.

@@ -516,7 +516,7 @@ def segy_to_mdio(  # noqa PLR0913
     if "trace" in grid.dim_names:
         # Find the trace dimension index and remove it from sizes
         trace_idx = grid.dim_names.index("trace")
-        dataset_sizes = grid.shape[:trace_idx] + grid.shape[trace_idx + 1:]
+        dataset_sizes = grid.shape[:trace_idx] + grid.shape[trace_idx + 1 :]
 
     mdio_ds: Dataset = mdio_template.build_dataset(
         name=mdio_template.name,

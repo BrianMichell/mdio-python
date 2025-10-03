@@ -10,10 +10,10 @@ from typing import Any
 import numpy as np
 from dask.array.core import normalize_chunks
 
+from mdio.builder.schemas.dimension import NamedDimension
 from mdio.core import Dimension
 from mdio.segy.geometry import GridOverrider
 from mdio.segy.parsers import parse_headers
-from mdio.builder.schemas.dimension import NamedDimension
 
 if TYPE_CHECKING:
     from numpy.typing import DTypeLike
@@ -28,41 +28,42 @@ logger = logging.getLogger(__name__)
 
 def _create_delayed_trace_dimension_transform(headers_subset: HeaderArray, position: int) -> callable:
     """Create a delayed transform function that adds a trace dimension and its coordinate.
-    
+
     This function creates a closure that captures the headers_subset and position,
     but defers the actual computation until the transform is executed by the dataset builder.
     The transform adds both the trace dimension and a corresponding coordinate.
-    
+
     Args:
         headers_subset: The header array containing trace information
         position: The position where the trace dimension should be inserted
-        
+
     Returns:
         A callable that can be used as a transform function
     """
+
     def delayed_transform(builder):
         from mdio.builder.schemas.dtype import ScalarType
-        
+
         # Calculate the trace dimension size at execution time
         if "trace" in headers_subset.dtype.names:
             trace_size = int(np.max(headers_subset["trace"]))
         else:
             # Fallback: if trace field doesn't exist, we need to determine size differently
             raise ValueError("Trace field not found in headers_subset when executing delayed transform")
-        
+
         # Add the trace dimension
         trace_dimension = NamedDimension(name="trace", size=trace_size)
         builder.push_dimension(trace_dimension, position=position, new_dim_chunk_size=1, new_dim_size=trace_size)
-        
+
         # Add the corresponding coordinate for the trace dimension
         builder.add_coordinate(
             "trace",
             dimensions=("trace",),
             data_type=ScalarType.INT32,
         )
-        
+
         return builder
-    
+
     return delayed_transform
 
 
