@@ -81,9 +81,9 @@ class AbstractDatasetTemplate(ABC):
         if header_dtype:
             self._add_trace_headers(header_dtype)
 
-        # This seems to be breaking the dataset, but adds the trace dimension.
         for transform in self._queued_transforms:
-            logger.debug(f"Applying transform: {transform.__name__}")
+            stmnt = f"Applying transform: {transform.__name__} to dataset"
+            logger.debug(stmnt)
             transform(self._builder)
         self._queued_transforms = []
         return self._builder.build()

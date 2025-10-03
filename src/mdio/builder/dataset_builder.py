@@ -7,6 +7,8 @@ from enum import auto
 from typing import Any
 
 from mdio import __version__
+from mdio.builder.schemas.chunk_grid import RegularChunkGrid
+from mdio.builder.schemas.chunk_grid import RegularChunkShape
 from mdio.builder.schemas.compressors import ZFP
 from mdio.builder.schemas.compressors import Blosc
 from mdio.builder.schemas.dimension import NamedDimension
@@ -102,16 +104,21 @@ class MDIODatasetBuilder:
         return self
 
     def push_dimension(
-        self, dimension: NamedDimension, position: int, new_dim_chunk_size: int = 1, new_dim_size: int = 1
+        self, dimension: NamedDimension, position: int, new_dim_chunk_size: int = 1
     ) -> "MDIODatasetBuilder":
         """Pushes a dimension to all Coordiantes and Variables.
+
         The position argument is the domain index of the dimension to push.
-        If a Variable is within the position domain, it will be inserted at the position and all remaining dimensions will be shifted to the right.
+        If a Variable is within the position domain, it will be inserted at the position
+        and all remaining dimensions will be shifted to the right.
 
         Args:
             dimension: The dimension to push
             position: The position to push the dimension to
             new_dim_chunk_size: The chunk size for only the new dimension
+
+        Raises:
+            ValueError: If the position is invalid
 
         Returns:
             self: Returns self for method chaining
@@ -123,7 +130,6 @@ class MDIODatasetBuilder:
             msg = "Position is greater than the number of dimensions"
             raise ValueError(msg)
         if new_dim_chunk_size <= 0:
-            # TODO(BrianMichell): Do we actually need to check this, or does Pydantic handle when we call?
             msg = "New dimension chunk size must be greater than 0"
             raise ValueError(msg)
 
@@ -132,9 +138,6 @@ class MDIODatasetBuilder:
 
         def propogate_dimension(variable: Variable, position: int, new_dim_chunk_size: int) -> Variable:
             """Propogates the dimension to the variable or coordinate."""
-            from mdio.builder.schemas.chunk_grid import RegularChunkGrid
-            from mdio.builder.schemas.chunk_grid import RegularChunkShape
-
             if len(variable.dimensions) + 1 <= position:
                 # Don't do anything if the new dimension is not within the Variable's domain
                 return variable
@@ -154,12 +157,11 @@ class MDIODatasetBuilder:
             # Update metadata with new chunk grid
             new_metadata = variable.metadata.model_copy() if variable.metadata else VariableMetadata()
             new_metadata.chunk_grid = new_chunk_grid
-            ret = variable.model_copy(update={"dimensions": new_dimensions, "metadata": new_metadata})
-            return ret
+            return variable.model_copy(update={"dimensions": new_dimensions, "metadata": new_metadata})
 
         to_ignore = []
         for v in self._dimensions:
-            to_ignore.append(v.name)
+            to_ignore.append(v.name)  # noqa: PERF401
 
         for i in range(len(self._variables)):
             var = self._variables[i]

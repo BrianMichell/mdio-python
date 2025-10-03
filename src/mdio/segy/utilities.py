@@ -11,6 +11,7 @@ import numpy as np
 from dask.array.core import normalize_chunks
 
 from mdio.builder.schemas.dimension import NamedDimension
+from mdio.builder.schemas.dtype import ScalarType
 from mdio.core import Dimension
 from mdio.segy.geometry import GridOverrider
 from mdio.segy.parsers import parse_headers
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from segy import SegyFile
     from segy.arrays import HeaderArray
 
+    from mdio.builder.dataset_builder import MDIODatasetBuilder
     from mdio.builder.templates.abstract_dataset_template import AbstractDatasetTemplate
 
 
@@ -41,15 +43,14 @@ def _create_delayed_trace_dimension_transform(headers_subset: HeaderArray, posit
         A callable that can be used as a transform function
     """
 
-    def delayed_transform(builder):
-        from mdio.builder.schemas.dtype import ScalarType
-
+    def delayed_transform(builder: MDIODatasetBuilder) -> MDIODatasetBuilder:
         # Calculate the trace dimension size at execution time
         if "trace" in headers_subset.dtype.names:
             trace_size = int(np.max(headers_subset["trace"]))
         else:
             # Fallback: if trace field doesn't exist, we need to determine size differently
-            raise ValueError("Trace field not found in headers_subset when executing delayed transform")
+            msg = "Trace field not found in headers_subset when executing delayed transform"
+            raise ValueError(msg)
 
         # Add the trace dimension
         trace_dimension = NamedDimension(name="trace", size=trace_size)
@@ -110,8 +111,7 @@ def get_grid_plan(  # noqa:  C901
     )
 
     if grid_overrides.get("HasDuplicates", False):
-        pos = len(template.dimension_names) - 1  # TODO: Implement the negative position case...
-        # Use the delayed transform function instead of a simple lambda
+        pos = len(template.dimension_names) - 1
         template._queue_transform(_create_delayed_trace_dimension_transform(headers_subset, pos))
         horizontal_dimensions = (*horizontal_dimensions, "trace")
 

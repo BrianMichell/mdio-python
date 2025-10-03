@@ -258,6 +258,7 @@ def analyze_non_indexed_headers(
     Args:
         index_headers: numpy array with index headers
         dtype: numpy type for value of created trace header.
+        index_names: list of index names to analyze
 
     Returns:
         Dict container header name as key and numpy array of values as value
@@ -438,7 +439,7 @@ class AutoChannelWrap(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
-        index_names=None,
+        index_names: Sequence[str] = None,  # noqa: ARG002
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
@@ -476,7 +477,7 @@ class AutoShotWrap(GridOverrideCommand):
         self,
         index_headers: HeaderArray,
         grid_overrides: dict[str, bool | int],
-        index_names=None,
+        index_names: Sequence[str] = None,  # noqa: ARG002
     ) -> NDArray:
         """Perform the grid transform."""
         self.validate(index_headers, grid_overrides)
