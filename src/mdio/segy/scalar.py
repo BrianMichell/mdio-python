@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+import os
 
 from segy.schema import SegyStandard
 from segy.standards.fields import trace as trace_header_fields
@@ -34,9 +35,16 @@ def _get_coordinate_scalar(segy_file: SegyFile) -> int:
     first_header = segy_file.header[0]
     coord_scalar = int(first_header[COORD_SCALAR_KEY])
 
+
     # Per Rev2, standardize 0 to 1 if a file is 2+.
     if coord_scalar == 0 and file_revision >= SegyStandard.REV2:
         logger.warning("Coordinate scalar is 0 and file is %s. Setting to 1.", file_revision)
+        return 1
+
+    if coord_scalar == 0 and os.getenv("MDIO__IMPORT__RAW_HEADERS"):
+        logger.warning("A coordinate scalar of 0 was detected and the segy spec was not zero. This is out of spec. Will be set to 1.")
+        logger.warning("Please consider using the segy overrides to fix the coordinate scalar.")
+        logger.warning("MDIO__IMPORT__RAW_HEADERS is responsible for this behavior and is subject to change or be removed.")
         return 1
 
     def validate_segy_scalar(scalar: int) -> bool:
