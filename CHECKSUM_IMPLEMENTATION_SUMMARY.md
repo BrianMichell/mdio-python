@@ -97,7 +97,7 @@ class TraceWorkerResult:
 - Stores final CRC32C in Zarr root attributes:
   ```python
   {
-      "segy_input_crc32c": "0x12345678",  # Hex format
+      "segy_input_crc32c": 305441741,  # Integer format
       "crc32c_algorithm": "CRC32C",
       "checksum_scope": "full_file",
       "checksum_library": "google-crc32c"
@@ -138,6 +138,11 @@ import zarr
 store = zarr.open_group("output.mdio", mode="r")
 checksum = store.attrs["segy_input_crc32c"]
 print(f"SEG-Y file CRC32C: {checksum}")
+# Output: SEG-Y file CRC32C: 305441741
+
+# Or in hex format if needed:
+print(f"SEG-Y file CRC32C: 0x{checksum:08x}")
+# Output: SEG-Y file CRC32C: 0x12345678
 ```
 
 ## Installation

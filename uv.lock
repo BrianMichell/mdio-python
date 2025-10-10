@@ -1885,6 +1885,9 @@ distributed = [
 lossy = [
     { name = "zfpy" },
 ]
+performance = [
+    { name = "numba" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1924,6 +1927,7 @@ requires-dist = [
     { name = "fsspec", specifier = ">=2025.9.0" },
     { name = "gcsfs", marker = "extra == 'cloud'", specifier = ">=2025.9.0" },
     { name = "google-crc32c", specifier = ">=1.5.0" },
+    { name = "numba", marker = "extra == 'performance'", specifier = ">=0.60.0" },
     { name = "pint", specifier = ">=0.25.0" },
     { name = "psutil", specifier = ">=7.1.0" },
     { name = "pydantic", specifier = ">=2.12.0" },
@@ -1936,7 +1940,7 @@ requires-dist = [
     { name = "zarr", specifier = ">=3.1.3" },
     { name = "zfpy", marker = "extra == 'lossy'", specifier = ">=1.0.1" },
 ]
-provides-extras = ["cloud", "distributed", "lossy"]
+provides-extras = ["cloud", "distributed", "lossy", "performance"]
 
 [package.metadata.requires-dev]
 dev = [

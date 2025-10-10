@@ -9,7 +9,6 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
-import google_crc32c
 import numpy as np
 import zarr
 from segy.config import SegyFileSettings
@@ -406,15 +405,11 @@ def _combine_header_and_trace_crc32c(headers_crc32c: int, trace_data_crc32c: int
     Returns:
         Combined CRC32C checksum for the entire SEG-Y file
     """
-    # Convert checksums to bytes
-    headers_crc_bytes = headers_crc32c.to_bytes(4, byteorder="big")
-    trace_data_crc_bytes = trace_data_crc32c.to_bytes(4, byteorder="big")
+    # Import the optimized CRC32C combination function from blocked_io
+    from mdio.segy.blocked_io import _crc32c_combine
 
-    # Use google_crc32c.extend to combine the checksums
-    # extend(crc1, crc2, length_of_crc2_data) combines two CRC32C values
-    combined_crc_bytes = google_crc32c.extend(headers_crc_bytes, trace_data_crc_bytes, trace_data_length)
-
-    return int.from_bytes(combined_crc_bytes, byteorder="big")
+    # Use the same mathematical combination used for trace checksums
+    return _crc32c_combine(headers_crc32c, trace_data_crc32c, trace_data_length)
 
 
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
@@ -628,7 +623,8 @@ def segy_to_mdio(  # noqa PLR0913
 
     # Calculate total trace data length for CRC32C combination
     trace_header_size = segy_spec.trace.header.itemsize
-    sample_size = segy_spec.trace.sample.itemsize
+    # sample_size = segy_spec.trace.sample.itemsize
+    sample_size = 4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
     num_samples = len(segy_file_info.sample_labels)
     trace_size = trace_header_size + (num_samples * sample_size)
     trace_data_length = segy_file_info.num_traces * trace_size
@@ -648,7 +644,7 @@ def segy_to_mdio(  # noqa PLR0913
     zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
     zarr_group.attrs.update(
         {
-            "segy_input_crc32c": f"0x{final_crc32c:08x}",
+            "segy_input_crc32c": final_crc32c,  # Store as integer, not hex string
             "crc32c_algorithm": "CRC32C",
             "checksum_scope": "full_file",
             "checksum_library": "google-crc32c",

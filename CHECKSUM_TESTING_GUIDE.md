@@ -51,7 +51,7 @@ print(f"Library: {store.attrs['checksum_library']}")
 
 Expected output:
 ```
-CRC32C: 0x12345678
+CRC32C: 305441741
 Algorithm: CRC32C
 Scope: full_file
 Library: google-crc32c
@@ -304,7 +304,7 @@ def validate_ingestion_checksum(segy_path: str, mdio_path: str) -> None:
     # Calculate actual file checksum
     print("Calculating actual file checksum...")
     actual_crc = calculate_file_checksum(Path(segy_path))
-    print(f"Actual CRC32C:  0x{actual_crc:08x}")
+    print(f"Actual CRC32C:  {actual_crc}")
     
     # Get stored checksum
     print("\nReading stored checksum...")
@@ -314,9 +314,8 @@ def validate_ingestion_checksum(segy_path: str, mdio_path: str) -> None:
         print("ERROR: No checksum found in store attributes!")
         sys.exit(1)
     
-    stored_crc_hex = store.attrs['segy_input_crc32c']
-    stored_crc = int(stored_crc_hex, 16)
-    print(f"Stored CRC32C:  {stored_crc_hex}")
+    stored_crc = store.attrs['segy_input_crc32c']
+    print(f"Stored CRC32C:  {stored_crc}")
     
     # Compare
     print("\n" + "=" * 60)
@@ -324,8 +323,8 @@ def validate_ingestion_checksum(segy_path: str, mdio_path: str) -> None:
         print("✓ VALIDATION PASSED - Checksums match!")
     else:
         print("✗ VALIDATION FAILED - Checksum mismatch!")
-        print(f"  Expected: 0x{actual_crc:08x}")
-        print(f"  Got:      {stored_crc_hex}")
+        print(f"  Expected: {actual_crc}")
+        print(f"  Got:      {stored_crc}")
         sys.exit(1)
     
     # Print additional metadata

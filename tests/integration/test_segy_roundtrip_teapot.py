@@ -166,8 +166,10 @@ class TestTeapotRoundtrip:
         segy_to_mdio(
             segy_spec=teapot_segy_spec,
             mdio_template=TemplateRegistry().get("PostStack3DTime"),
-            input_path=segy_input,
-            output_path=zarr_tmp,
+            # input_path=segy_input,
+            input_path="/home/brian_michell_tgs_com/tmp4/filt_mig.sgy",
+            # output_path=zarr_tmp,
+            output_path="/home/brian_michell_tgs_com/tmp4/filt_mig.mdio",
             overwrite=True,
         )
 

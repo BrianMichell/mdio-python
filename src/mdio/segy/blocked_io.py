@@ -30,6 +30,22 @@ from mdio.segy.creation import concat_files
 from mdio.segy.creation import serialize_to_segy_stack
 from mdio.segy.utilities import find_trailing_ones_index
 
+try:
+    from numba import njit
+
+    HAS_NUMBA = True
+except ImportError:
+    HAS_NUMBA = False
+
+    # Fallback decorator that does nothing
+    def njit(*args, **kwargs):  # noqa: ARG001
+        """Fallback for when numba is not available."""
+
+        def decorator(func):
+            return func
+
+        return decorator
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from segy import SegyFactory
@@ -55,11 +71,84 @@ def _update_stats(final_stats: SummaryStatistics, partial_stats: SummaryStatisti
     final_stats.sum_squares += partial_stats.sum_squares
 
 
+# CRC32C polynomial constant (Castagnoli, reversed representation)
+CRC32C_POLY = np.uint32(0x82F63B78)
+
+
+@njit(cache=True, fastmath=True)
+def _gf2_matrix_times(matrix: np.ndarray, vec: np.uint32) -> np.uint32:
+    """Multiply a matrix by a vector in GF(2) - JIT compiled."""
+    result = np.uint32(0)
+    for i in range(32):
+        if vec & (np.uint32(1) << i):
+            result ^= matrix[i]
+    return result
+
+
+@njit(cache=True, fastmath=True)
+def _gf2_matrix_square(mat: np.ndarray) -> np.ndarray:
+    """Square a matrix in GF(2) - JIT compiled, returns new matrix."""
+    square = np.empty(32, dtype=np.uint32)
+    for i in range(32):
+        square[i] = _gf2_matrix_times(mat, mat[i])
+    return square
+
+
+@njit(cache=True, fastmath=True)
+def _build_crc32c_matrix() -> np.ndarray:
+    """Build the basic CRC32C transformation matrix - JIT compiled."""
+    matrix = np.empty(32, dtype=np.uint32)
+    for i in range(32):
+        val = np.uint32(1) << i
+        if val & np.uint32(1):
+            val = (val >> np.uint32(1)) ^ CRC32C_POLY
+        else:
+            val >>= np.uint32(1)
+        matrix[i] = val
+    return matrix
+
+
+@njit(cache=True, fastmath=True)
+def _crc32c_combine_jit(crc1: np.uint32, crc2: np.uint32, len2: np.uint64) -> np.uint32:
+    """JIT-compiled CRC32C combination using polynomial arithmetic in GF(2).
+    
+    Args:
+        crc1: CRC32C of first data block
+        crc2: CRC32C of second data block
+        len2: Length of second data block in bytes
+        
+    Returns:
+        Combined CRC32C of concatenated data blocks
+    """
+    if len2 == 0:
+        return crc1
+
+    # Build transformation matrices
+    odd = _build_crc32c_matrix()
+    even = _gf2_matrix_square(odd)
+    odd = _gf2_matrix_square(even)
+
+    # Apply the length in bits
+    bits = len2 * np.uint64(8)
+    
+    # Do the transformation for each bit in len2
+    result = crc1
+    while bits > 0:
+        if bits & np.uint64(1):
+            result = _gf2_matrix_times(odd, result)
+        bits >>= np.uint64(1)
+        if bits > 0:
+            even = _gf2_matrix_square(odd)
+            odd = _gf2_matrix_square(even)
+
+    # XOR with crc2
+    return result ^ crc2
+
+
 def _crc32c_combine(crc1: int, crc2: int, len2: int) -> int:
     """Combine two CRC32C checksums mathematically.
     
-    Implements CRC32C combination using polynomial arithmetic in GF(2).
-    This allows combining CRC(A) and CRC(B) to get CRC(A||B) without re-reading data.
+    Wrapper for the JIT-compiled version with proper type conversion.
     
     Args:
         crc1: CRC32C of first data block
@@ -69,61 +158,12 @@ def _crc32c_combine(crc1: int, crc2: int, len2: int) -> int:
     Returns:
         Combined CRC32C of concatenated data blocks
     """
-    # CRC32C polynomial: 0x1EDC6F41 (Castagnoli)
-    CRC32C_POLY = 0x82F63B78  # Reversed representation
-
-    # GF(2) polynomial multiplication with CRC32C polynomial
-    def gf2_matrix_times(matrix: list[int], vec: int) -> int:
-        """Multiply a matrix by a vector in GF(2)."""
-        result = 0
-        for i in range(32):
-            if vec & (1 << i):
-                result ^= matrix[i]
-        return result
-
-    def gf2_matrix_square(square: list[int], mat: list[int]) -> None:
-        """Square a matrix in GF(2)."""
-        for i in range(32):
-            square[i] = gf2_matrix_times(mat, mat[i])
-
-    # Build the power-of-2 matrices for CRC32C
-    def build_crc32c_matrix(matrix: list[int]) -> None:
-        """Build the basic CRC32C transformation matrix."""
-        for i in range(32):
-            val = 1 << i
-            if val & 1:
-                val = (val >> 1) ^ CRC32C_POLY
-            else:
-                val >>= 1
-            matrix[i] = val
-
-    # Apply len2 zeros to crc1
-    if len2 == 0:
-        return crc1
-
-    # Build transformation matrix
-    even = [0] * 32
-    odd = [0] * 32
-    
-    build_crc32c_matrix(odd)
-    gf2_matrix_square(even, odd)
-    gf2_matrix_square(odd, even)
-
-    # Apply the length in bits
-    bits = len2 * 8
-    
-    # Do the transformation for each bit in len2
-    result = crc1
-    while bits:
-        if bits & 1:
-            result = gf2_matrix_times(odd, result)
-        bits >>= 1
-        if bits:
-            gf2_matrix_square(even, odd)
-            gf2_matrix_square(odd, even)
-
-    # XOR with crc2
-    return result ^ crc2
+    result = _crc32c_combine_jit(
+        np.uint32(crc1),
+        np.uint32(crc2),
+        np.uint64(len2),
+    )
+    return int(result)
 
 
 def _combine_crc32c_checksums(checksum_parts: list[tuple[int, int, int]]) -> int:
