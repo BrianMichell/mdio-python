@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import TypedDict
 
+import google_crc32c
 import numpy as np
 from segy import SegyFile
 from segy.arrays import HeaderArray
@@ -101,7 +102,7 @@ def trace_worker(  # noqa: PLR0913
     region: dict[str, slice],
     grid_map: zarr_Array,
     dataset: xr_Dataset,
-) -> SummaryStatistics | None:
+) -> TraceWorkerResult | None:
     """Writes a subset of traces from a region of the dataset of Zarr file.
 
     Args:
@@ -115,7 +116,7 @@ def trace_worker(  # noqa: PLR0913
         dataset: Xarray dataset containing the data to write.
 
     Returns:
-        SummaryStatistics object containing statistics about the written traces.
+        TraceWorkerResult object containing statistics and checksum info, or None if no data.
     """
     region_slices = tuple(region.values())
     local_grid_map = grid_map[region_slices[:-1]]  # minus last (vertical) axis
@@ -199,15 +200,51 @@ def trace_worker(  # noqa: PLR0913
 
     to_mdio(ds_to_write, output_path=output_path, region=region, mode="r+")
 
+    # Calculate byte ranges and checksums for each trace
+    trace_header_size = segy_file.spec.trace.header.itemsize
+    # sample_size = segy_file.spec.trace.sample.itemsize
+    sample_size = 4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
+    num_samples = len(segy_file.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+
+    # Sort trace indices to process them in file order
+    sorted_trace_indexes = sorted(live_trace_indexes)
+
+    # Calculate checksum for each trace individually
+    trace_checksums: list[tuple[int, int, int]] = []
+
+    for trace_idx in sorted_trace_indexes:
+        byte_offset = 3600 + trace_idx * trace_size  # 3600 = text header + binary header
+        byte_length = trace_size
+
+        # Read raw bytes for this trace
+        raw_bytes = segy_file.fs.read_block(
+            fn=segy_file.url,
+            offset=byte_offset,
+            length=byte_length,
+        )
+
+        # Calculate CRC32C for this individual trace
+        crc = google_crc32c.Checksum(raw_bytes)
+        partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
+
+        trace_checksums.append((byte_offset, partial_crc32c, byte_length))
+
+    # Calculate statistics
     nonzero_samples = np.ma.masked_values(traces.sample, 0, copy=False)
     histogram = CenteredBinHistogram(bin_centers=[], counts=[])
-    return SummaryStatistics(
+    stats = SummaryStatistics(
         count=nonzero_samples.count(),
         min=nonzero_samples.min(),
         max=nonzero_samples.max(),
         sum=nonzero_samples.sum(dtype="float64"),
         sum_squares=(np.ma.power(nonzero_samples, 2).sum(dtype="float64")),
         histogram=histogram,
+    )
+
+    return TraceWorkerResult(
+        statistics=stats,
+        trace_checksums=trace_checksums,  # Now returns list of individual trace checksums
     )
 
 
@@ -221,6 +258,16 @@ class SegyFileInfo:
     binary_header_dict: dict
     raw_binary_headers: bytes
     coordinate_scalar: int
+    headers_crc32c: int  # CRC32C of text + binary headers (3600 bytes)
+    trace_data_offset: int  # Byte offset where trace data starts
+
+
+@dataclass
+class TraceWorkerResult:
+    """Result from trace_worker containing statistics and checksum info."""
+
+    statistics: SummaryStatistics | None
+    trace_checksums: list[tuple[int, int, int]]  # List of (byte_offset, crc32c, byte_length) for each trace
 
 
 def info_worker(segy_file_kwargs: SegyFileArguments) -> SegyFileInfo:
@@ -238,12 +285,28 @@ def info_worker(segy_file_kwargs: SegyFileArguments) -> SegyFileInfo:
 
     text_header = segy_file.text_header
 
+    # Read raw text header bytes for CRC32C calculation (3200 bytes)
+    text_header_bytes = segy_file.fs.read_block(
+        fn=segy_file.url,
+        offset=0,
+        length=3200,
+    )
+
     # Get header information directly
     raw_binary_headers = segy_file.fs.read_block(
         fn=segy_file.url,
         offset=segy_file.spec.binary_header.offset,
         length=segy_file.spec.binary_header.itemsize,
     )
+
+    # Calculate CRC32C for the entire header section (text + binary = 3600 bytes)
+    crc = google_crc32c.Checksum()
+    crc.update(text_header_bytes)
+    crc.update(raw_binary_headers)
+    headers_crc32c = int.from_bytes(crc.digest(), byteorder="big")
+
+    # Calculate where trace data starts (typically 3600 bytes)
+    trace_data_offset = 3200 + segy_file.spec.binary_header.itemsize
 
     # We read here twice, but it's ok for now. Only 400-bytes.
     binary_header_dict = segy_file.binary_header.to_dict()
@@ -257,4 +320,6 @@ def info_worker(segy_file_kwargs: SegyFileArguments) -> SegyFileInfo:
         binary_header_dict=binary_header_dict,
         raw_binary_headers=raw_binary_headers,
         coordinate_scalar=coordinate_scalar,
+        headers_crc32c=headers_crc32c,
+        trace_data_offset=trace_data_offset,
     )

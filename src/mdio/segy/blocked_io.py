@@ -9,6 +9,7 @@ from concurrent.futures import as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import google_crc32c
 import numpy as np
 import zarr
 from dask.array import Array
@@ -22,6 +23,7 @@ from mdio.builder.schemas.v1.stats import CenteredBinHistogram
 from mdio.builder.schemas.v1.stats import SummaryStatistics
 from mdio.constants import ZarrFormat
 from mdio.core.indexing import ChunkIterator
+from mdio.segy._workers import TraceWorkerResult
 from mdio.segy._workers import trace_worker
 from mdio.segy.creation import SegyPartRecord
 from mdio.segy.creation import concat_files
@@ -53,13 +55,125 @@ def _update_stats(final_stats: SummaryStatistics, partial_stats: SummaryStatisti
     final_stats.sum_squares += partial_stats.sum_squares
 
 
+def _crc32c_combine(crc1: int, crc2: int, len2: int) -> int:
+    """Combine two CRC32C checksums mathematically.
+    
+    Implements CRC32C combination using polynomial arithmetic in GF(2).
+    This allows combining CRC(A) and CRC(B) to get CRC(A||B) without re-reading data.
+    
+    Args:
+        crc1: CRC32C of first data block
+        crc2: CRC32C of second data block  
+        len2: Length of second data block in bytes
+        
+    Returns:
+        Combined CRC32C of concatenated data blocks
+    """
+    # CRC32C polynomial: 0x1EDC6F41 (Castagnoli)
+    CRC32C_POLY = 0x82F63B78  # Reversed representation
+
+    # GF(2) polynomial multiplication with CRC32C polynomial
+    def gf2_matrix_times(matrix: list[int], vec: int) -> int:
+        """Multiply a matrix by a vector in GF(2)."""
+        result = 0
+        for i in range(32):
+            if vec & (1 << i):
+                result ^= matrix[i]
+        return result
+
+    def gf2_matrix_square(square: list[int], mat: list[int]) -> None:
+        """Square a matrix in GF(2)."""
+        for i in range(32):
+            square[i] = gf2_matrix_times(mat, mat[i])
+
+    # Build the power-of-2 matrices for CRC32C
+    def build_crc32c_matrix(matrix: list[int]) -> None:
+        """Build the basic CRC32C transformation matrix."""
+        for i in range(32):
+            val = 1 << i
+            if val & 1:
+                val = (val >> 1) ^ CRC32C_POLY
+            else:
+                val >>= 1
+            matrix[i] = val
+
+    # Apply len2 zeros to crc1
+    if len2 == 0:
+        return crc1
+
+    # Build transformation matrix
+    even = [0] * 32
+    odd = [0] * 32
+    
+    build_crc32c_matrix(odd)
+    gf2_matrix_square(even, odd)
+    gf2_matrix_square(odd, even)
+
+    # Apply the length in bits
+    bits = len2 * 8
+    
+    # Do the transformation for each bit in len2
+    result = crc1
+    while bits:
+        if bits & 1:
+            result = gf2_matrix_times(odd, result)
+        bits >>= 1
+        if bits:
+            gf2_matrix_square(even, odd)
+            gf2_matrix_square(odd, even)
+
+    # XOR with crc2
+    return result ^ crc2
+
+
+def _combine_crc32c_checksums(checksum_parts: list[tuple[int, int, int]]) -> int:
+    """Combine partial CRC32C checksums mathematically without re-reading data.
+
+    Args:
+        checksum_parts: List of (byte_offset, crc32c, byte_length) tuples
+
+    Returns:
+        Combined CRC32C checksum
+
+    Raises:
+        ValueError: If checksum parts list is empty or has gaps/overlaps
+    """
+    if not checksum_parts:
+        msg = "Cannot combine empty checksum parts"
+        raise ValueError(msg)
+
+    # Sort by byte offset to ensure file order
+    sorted_parts = sorted(checksum_parts, key=lambda x: x[0])
+
+    # Verify no gaps or overlaps
+    for i in range(len(sorted_parts) - 1):
+        current_end = sorted_parts[i][0] + sorted_parts[i][2]
+        next_start = sorted_parts[i + 1][0]
+        if current_end != next_start:
+            msg = (
+                f"Gap or overlap detected: "
+                f"current ends at {current_end}, next starts at {next_start}"
+            )
+            raise ValueError(msg)
+
+    # Start with first CRC
+    combined_crc = sorted_parts[0][1]
+
+    # Combine each subsequent CRC using mathematical combination
+    for i in range(1, len(sorted_parts)):
+        _, crc, length = sorted_parts[i]
+        combined_crc = _crc32c_combine(combined_crc, crc, length)
+
+    return combined_crc
+
+
 def to_zarr(  # noqa: PLR0913, PLR0915
     segy_file_kwargs: SegyFileArguments,
     output_path: UPath,
     grid_map: zarr_Array,
     dataset: xr_Dataset,
     data_variable_name: str,
-) -> SummaryStatistics:
+) -> tuple[SummaryStatistics, int]:
     """Blocked I/O from SEG-Y to chunked `xarray.Dataset`.
 
     Args:
@@ -70,11 +184,12 @@ def to_zarr(  # noqa: PLR0913, PLR0915
         data_variable_name: Name of the data variable in the dataset.
 
     Returns:
-        None
+        Tuple of (SummaryStatistics, combined_trace_data_crc32c)
     """
     data = dataset[data_variable_name]
 
     final_stats = _create_stats()
+    checksum_parts: list[tuple[int, int, int]] = []  # List of (byte_offset, partial_crc32c, byte_length)
 
     data_variable_chunks = data.encoding.get("chunks")
     worker_chunks = data_variable_chunks[:-1] + (data.shape[-1],)  # un-chunk sample axis
@@ -104,9 +219,17 @@ def to_zarr(  # noqa: PLR0913, PLR0915
         )
 
         for future in iterable:
-            result = future.result()
+            result: TraceWorkerResult | None = future.result()
             if result is not None:
-                _update_stats(final_stats, result)
+                if result.statistics is not None:
+                    _update_stats(final_stats, result.statistics)
+                # Each worker returns a list of trace checksums
+                checksum_parts.extend(result.trace_checksums)
+
+    # Combine all partial checksums into a single trace data checksum
+    print("Checksumming traces...")
+    trace_data_crc32c = _combine_crc32c_checksums(checksum_parts) if checksum_parts else 0
+    print("Trace data CRC32C:", trace_data_crc32c)
 
     # Xarray doesn't directly support incremental attribute updates when appending to an existing Zarr store.
     # HACK: We will update the array attribute using zarr's API directly.
@@ -119,7 +242,7 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     if zarr.config.get("default_zarr_format") == ZarrFormat.V2:
         zarr.consolidate_metadata(zarr_group.store)
 
-    return final_stats
+    return final_stats, trace_data_crc32c
 
 
 def segy_record_concat(

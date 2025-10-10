@@ -9,6 +9,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
+import google_crc32c
 import numpy as np
 import zarr
 from segy.config import SegyFileSettings
@@ -394,6 +395,28 @@ def _add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, A
         dataset.metadata.attributes["gridOverrides"] = grid_overrides
 
 
+def _combine_header_and_trace_crc32c(headers_crc32c: int, trace_data_crc32c: int, trace_data_length: int) -> int:
+    """Combine header and trace data CRC32C checksums into a single file checksum.
+
+    Args:
+        headers_crc32c: CRC32C checksum of the file headers (text + binary = 3600 bytes)
+        trace_data_crc32c: CRC32C checksum of all trace data
+        trace_data_length: Total length of trace data in bytes
+
+    Returns:
+        Combined CRC32C checksum for the entire SEG-Y file
+    """
+    # Convert checksums to bytes
+    headers_crc_bytes = headers_crc32c.to_bytes(4, byteorder="big")
+    trace_data_crc_bytes = trace_data_crc32c.to_bytes(4, byteorder="big")
+
+    # Use google_crc32c.extend to combine the checksums
+    # extend(crc1, crc2, length_of_crc2_data) combines two CRC32C values
+    combined_crc_bytes = google_crc32c.extend(headers_crc_bytes, trace_data_crc_bytes, trace_data_length)
+
+    return int.from_bytes(combined_crc_bytes, byteorder="big")
+
+
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
     """Add raw headers capability to the MDIO template by monkey-patching its _add_variables method.
 
@@ -595,10 +618,39 @@ def segy_to_mdio(  # noqa PLR0913
     default_variable_name = mdio_template.default_variable_name
     # This is an memory-expensive and time-consuming read-write operation
     # performed in chunks to save the memory
-    blocked_io.to_zarr(
+    final_stats, trace_data_crc32c = blocked_io.to_zarr(
         segy_file_kwargs=segy_file_kwargs,
         output_path=output_path,
         grid_map=grid.map,
         dataset=xr_dataset,
         data_variable_name=default_variable_name,
+    )
+
+    # Calculate total trace data length for CRC32C combination
+    trace_header_size = segy_spec.trace.header.itemsize
+    sample_size = segy_spec.trace.sample.itemsize
+    num_samples = len(segy_file_info.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+    trace_data_length = segy_file_info.num_traces * trace_size
+
+    # Combine header and trace data checksums into final file checksum
+    final_crc32c = _combine_header_and_trace_crc32c(
+        headers_crc32c=segy_file_info.headers_crc32c,
+        trace_data_crc32c=trace_data_crc32c,
+        trace_data_length=trace_data_length,
+    )
+
+    # Store the final CRC32C checksum in the Zarr store attributes
+    from mdio.api.io import _normalize_storage_options
+    from zarr import open_group as zarr_open_group
+
+    storage_options = _normalize_storage_options(output_path)
+    zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
+    zarr_group.attrs.update(
+        {
+            "segy_input_crc32c": f"0x{final_crc32c:08x}",
+            "crc32c_algorithm": "CRC32C",
+            "checksum_scope": "full_file",
+            "checksum_library": "google-crc32c",
+        }
     )
