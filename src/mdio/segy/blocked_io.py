@@ -213,7 +213,7 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     grid_map: zarr_Array,
     dataset: xr_Dataset,
     data_variable_name: str,
-) -> tuple[SummaryStatistics, int]:
+) -> SummaryStatistics:
     """Blocked I/O from SEG-Y to chunked `xarray.Dataset`.
 
     Args:
@@ -224,12 +224,11 @@ def to_zarr(  # noqa: PLR0913, PLR0915
         data_variable_name: Name of the data variable in the dataset.
 
     Returns:
-        Tuple of (SummaryStatistics, combined_trace_data_crc32c)
+        SummaryStatistics for the written data
     """
     data = dataset[data_variable_name]
 
     final_stats = _create_stats()
-    checksum_parts: list[tuple[int, int, int]] = []  # List of (byte_offset, partial_crc32c, byte_length)
 
     data_variable_chunks = data.encoding.get("chunks")
     worker_chunks = data_variable_chunks[:-1] + (data.shape[-1],)  # un-chunk sample axis
@@ -263,13 +262,6 @@ def to_zarr(  # noqa: PLR0913, PLR0915
             if result is not None:
                 if result.statistics is not None:
                     _update_stats(final_stats, result.statistics)
-                # Each worker returns a list of trace checksums
-                checksum_parts.extend(result.trace_checksums)
-
-    # Combine all partial checksums into a single trace data checksum
-    print("Checksumming traces...")
-    trace_data_crc32c = _combine_crc32c_checksums(checksum_parts) if checksum_parts else 0
-    print("Trace data CRC32C:", trace_data_crc32c)
 
     # Xarray doesn't directly support incremental attribute updates when appending to an existing Zarr store.
     # HACK: We will update the array attribute using zarr's API directly.
@@ -282,7 +274,7 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     if zarr.config.get("default_zarr_format") == ZarrFormat.V2:
         zarr.consolidate_metadata(zarr_group.store)
 
-    return final_stats, trace_data_crc32c
+    return final_stats
 
 
 def segy_record_concat(

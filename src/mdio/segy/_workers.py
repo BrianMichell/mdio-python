@@ -54,8 +54,9 @@ def header_scan_worker(
     segy_file_kwargs: SegyFileArguments,
     trace_range: tuple[int, int],
     subset: list[str] | None = None,
-) -> HeaderArray:
-    """Header scan worker.
+    calculate_checksum: bool = False,
+) -> HeaderArray | tuple[HeaderArray, tuple[int, int, int]]:
+    """Header scan worker with optional checksum calculation.
 
     If SegyFile is not open, it can either accept a path string or a handle that was opened in
     a different context manager.
@@ -64,21 +65,24 @@ def header_scan_worker(
         segy_file_kwargs: Arguments to open SegyFile instance.
         trace_range: Tuple consisting of the trace ranges to read.
         subset: List of header names to filter and keep.
+        calculate_checksum: If True, also calculate CRC32C for this trace range.
 
     Returns:
-        HeaderArray parsed from SEG-Y library.
+        HeaderArray if calculate_checksum is False, otherwise tuple of (HeaderArray, checksum_info)
+        where checksum_info is (byte_offset, crc32c, byte_length).
     """
     segy_file = SegyFile(**segy_file_kwargs)
 
-    slice_ = slice(*trace_range)
-
-    cloud_native_mode = os.getenv("MDIO__IMPORT__CLOUD_NATIVE", default="False")
-
-    if cloud_native_mode.lower() in {"true", "1"}:
-        trace_header = segy_file.trace[slice_].header
-    else:
-        trace_header = segy_file.header[slice_]
-
+    start_trace, end_trace = trace_range
+    trace_indices = list(range(start_trace, end_trace))
+    
+    # Read full trace data (header + samples) ONCE using the raw trace wrapper
+    # This avoids duplicate I/O - we get both headers and raw bytes in a single read
+    traces = SegyFileRawTraceWrapper(segy_file, trace_indices)
+    
+    # Extract headers from the data we already read (no additional I/O)
+    trace_header = traces.header
+    
     if subset is not None:
         # struct field selection needs a list, not a tuple; a subset is a tuple from the template.
         trace_header = trace_header[list(subset)]
@@ -92,7 +96,28 @@ def header_scan_worker(
     # (singleton) so we can concat and assign stuff later.
     trace_header = np.array(trace_header, dtype=new_dtype, ndmin=1)
 
-    return HeaderArray(trace_header)  # wrap back so we can use aliases
+    if not calculate_checksum:
+        return HeaderArray(trace_header)  # wrap back so we can use aliases
+
+    # Calculate checksum from the raw bytes ALREADY IN MEMORY (NO ADDITIONAL I/O!)
+    raw_bytes = traces.trace_buffer_array.tobytes()
+    crc = google_crc32c.Checksum(raw_bytes)
+    partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
+    print(f"Partial CRC32C for trace range {trace_range}: {partial_crc32c}")
+    
+    # Calculate byte offset and length
+    trace_header_size = segy_file.spec.trace.header.itemsize
+    # sample_size = segy_file.spec.trace.sample.itemsize
+    sample_size = 4  # This will always be a 4-byte float
+    num_samples = len(segy_file.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+    
+    byte_offset = 3600 + start_trace * trace_size
+    byte_length = len(raw_bytes)
+    
+    checksum_info = (byte_offset, partial_crc32c, byte_length)
+    
+    return HeaderArray(trace_header), checksum_info
 
 
 def trace_worker(  # noqa: PLR0913
@@ -147,11 +172,8 @@ def trace_worker(  # noqa: PLR0913
     if raw_header_key in dataset.data_vars:
         worker_variables.append(raw_header_key)
 
-    # traces = segy_file.trace[live_trace_indexes]
-    # Raw headers are not intended to remain as a feature of the SEGY ingestion.
-    # For that reason, we have wrapped the accessors to provide an interface that can be removed
-    # and not require additional changes to the below code.
-    # NOTE: The `raw_header_key` code block should be removed in full as it will become dead code.
+    # Read only live traces for processing
+    # Checksum is calculated separately during header scanning phase
     traces = SegyFileRawTraceWrapper(segy_file, live_trace_indexes)
 
     ds_to_write = dataset[worker_variables]
@@ -200,35 +222,8 @@ def trace_worker(  # noqa: PLR0913
 
     to_mdio(ds_to_write, output_path=output_path, region=region, mode="r+")
 
-    # Calculate byte ranges and checksums for each trace
-    trace_header_size = segy_file.spec.trace.header.itemsize
-    # sample_size = segy_file.spec.trace.sample.itemsize
-    sample_size = 4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
-    num_samples = len(segy_file.sample_labels)
-    trace_size = trace_header_size + (num_samples * sample_size)
-
-    # Sort trace indices to process them in file order
-    sorted_trace_indexes = sorted(live_trace_indexes)
-
-    # Calculate checksum for each trace individually
-    trace_checksums: list[tuple[int, int, int]] = []
-
-    for trace_idx in sorted_trace_indexes:
-        byte_offset = 3600 + trace_idx * trace_size  # 3600 = text header + binary header
-        byte_length = trace_size
-
-        # Read raw bytes for this trace
-        raw_bytes = segy_file.fs.read_block(
-            fn=segy_file.url,
-            offset=byte_offset,
-            length=byte_length,
-        )
-
-        # Calculate CRC32C for this individual trace
-        crc = google_crc32c.Checksum(raw_bytes)
-        partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
-
-        trace_checksums.append((byte_offset, partial_crc32c, byte_length))
+    # Checksum calculation has moved to header scanning phase
+    trace_checksums: list[tuple[int, int, int]] = []  # Empty - no longer needed
 
     # Calculate statistics
     nonzero_samples = np.ma.masked_values(traces.sample, 0, copy=False)

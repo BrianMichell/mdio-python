@@ -32,7 +32,8 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     template: AbstractDatasetTemplate,
     return_headers: bool = False,
     grid_overrides: dict[str, Any] | None = None,
-) -> tuple[list[Dimension], tuple[int, ...]] | tuple[list[Dimension], tuple[int, ...], HeaderArray]:
+    calculate_checksum: bool = False,
+) -> tuple[list[Dimension], tuple[int, ...]] | tuple[list[Dimension], tuple[int, ...], HeaderArray] | tuple[list[Dimension], tuple[int, ...], HeaderArray, int]:
     """Infer dimension ranges, and increments.
 
     Generates multiple dimensions with the following steps:
@@ -48,9 +49,10 @@ def get_grid_plan(  # noqa:  C901, PLR0913
         template: MDIO template where coordinate names and domain will be taken.
         return_headers: Option to return parsed headers with `Dimension` objects. Default is False.
         grid_overrides: Option to add grid overrides. See main documentation.
+        calculate_checksum: Option to calculate CRC32C checksum during scanning. Default is False.
 
     Returns:
-        All index dimensions and chunksize or dimensions and chunksize together with header values.
+        All index dimensions and chunksize, optionally with header values and/or checksum.
     """
     if grid_overrides is None:
         grid_overrides = {}
@@ -58,11 +60,19 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     # Keep only dimension and non-dimension coordinates excluding the vertical axis
     horizontal_dimensions = template.dimension_names[:-1]
     horizontal_coordinates = horizontal_dimensions + template.coordinate_names
-    headers_subset = parse_headers(
+    parse_result = parse_headers(
         segy_file_kwargs=segy_file_kwargs,
         num_traces=segy_file_info.num_traces,
         subset=horizontal_coordinates,
+        calculate_checksum=calculate_checksum,
     )
+    
+    # Unpack result based on whether checksum was calculated
+    if calculate_checksum:
+        headers_subset, trace_data_crc32c = parse_result
+    else:
+        headers_subset = parse_result
+        trace_data_crc32c = None
 
     # Handle grid overrides.
     override_handler = GridOverrider()
@@ -86,8 +96,12 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     vertical_dim = Dimension(coords=sample_labels, name=template.trace_domain)
     dimensions.append(vertical_dim)
 
-    if return_headers:
+    if return_headers and calculate_checksum:
+        return dimensions, chunksize, headers_subset, trace_data_crc32c
+    elif return_headers:
         return dimensions, chunksize, headers_subset
+    elif calculate_checksum:
+        return dimensions, chunksize, None, trace_data_crc32c
 
     return dimensions, chunksize
 

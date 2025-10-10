@@ -142,20 +142,22 @@ def _scan_for_headers(
     segy_file_info: SegyFileInfo,
     template: AbstractDatasetTemplate,
     grid_overrides: dict[str, Any] | None = None,
-) -> tuple[list[Dimension], SegyHeaderArray]:
+) -> tuple[list[Dimension], SegyHeaderArray, int]:
     """Extract trace dimensions and index headers from the SEG-Y file.
 
     This is an expensive operation.
     It scans the SEG-Y file in chunks by using ProcessPoolExecutor
+    Also calculates CRC32C checksum for all trace data during scanning.
     """
     full_chunk_size = template.full_chunk_size
-    segy_dimensions, chunk_size, segy_headers = get_grid_plan(
+    segy_dimensions, chunk_size, segy_headers, trace_data_crc32c = get_grid_plan(
         segy_file_kwargs=segy_file_kwargs,
         segy_file_info=segy_file_info,
         return_headers=True,
         template=template,
         chunksize=full_chunk_size,
         grid_overrides=grid_overrides,
+        calculate_checksum=True,
     )
     if full_chunk_size != chunk_size:
         # TODO(Dmitriy): implement grid overrides
@@ -164,7 +166,7 @@ def _scan_for_headers(
         # support for grid overrides is implemented
         err = "Support for changing full_chunk_size in grid overrides is not yet implemented"
         raise NotImplementedError(err)
-    return segy_dimensions, segy_headers
+    return segy_dimensions, segy_headers, trace_data_crc32c
 
 
 def _read_segy_file_info(segy_file_kwargs: SegyFileArguments) -> SegyFileInfo:
@@ -551,7 +553,7 @@ def segy_to_mdio(  # noqa PLR0913
     }
     segy_file_info = _read_segy_file_info(segy_file_kwargs)
 
-    segy_dimensions, segy_headers = _scan_for_headers(
+    segy_dimensions, segy_headers, trace_data_crc32c = _scan_for_headers(
         segy_file_kwargs,
         segy_file_info,
         template=mdio_template,
@@ -613,7 +615,8 @@ def segy_to_mdio(  # noqa PLR0913
     default_variable_name = mdio_template.default_variable_name
     # This is an memory-expensive and time-consuming read-write operation
     # performed in chunks to save the memory
-    final_stats, trace_data_crc32c = blocked_io.to_zarr(
+    # NOTE: trace_data_crc32c was already calculated during header scanning phase
+    final_stats = blocked_io.to_zarr(
         segy_file_kwargs=segy_file_kwargs,
         output_path=output_path,
         grid_map=grid.map,
