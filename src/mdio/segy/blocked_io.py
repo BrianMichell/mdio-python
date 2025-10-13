@@ -9,7 +9,6 @@ from concurrent.futures import as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import google_crc32c
 import numpy as np
 import zarr
 from dask.array import Array
@@ -30,21 +29,6 @@ from mdio.segy.creation import concat_files
 from mdio.segy.creation import serialize_to_segy_stack
 from mdio.segy.utilities import find_trailing_ones_index
 
-try:
-    from numba import njit
-
-    HAS_NUMBA = True
-except ImportError:
-    HAS_NUMBA = False
-
-    # Fallback decorator that does nothing
-    def njit(*args, **kwargs):  # noqa: ARG001
-        """Fallback for when numba is not available."""
-
-        def decorator(func):
-            return func
-
-        return decorator
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -71,140 +55,6 @@ def _update_stats(final_stats: SummaryStatistics, partial_stats: SummaryStatisti
     final_stats.sum_squares += partial_stats.sum_squares
 
 
-# CRC32C polynomial constant (Castagnoli, reversed representation)
-CRC32C_POLY = np.uint32(0x82F63B78)
-
-
-@njit(cache=True, fastmath=True)
-def _gf2_matrix_times(matrix: np.ndarray, vec: np.uint32) -> np.uint32:
-    """Multiply a matrix by a vector in GF(2) - JIT compiled."""
-    result = np.uint32(0)
-    for i in range(32):
-        if vec & (np.uint32(1) << i):
-            result ^= matrix[i]
-    return result
-
-
-@njit(cache=True, fastmath=True)
-def _gf2_matrix_square(mat: np.ndarray) -> np.ndarray:
-    """Square a matrix in GF(2) - JIT compiled, returns new matrix."""
-    square = np.empty(32, dtype=np.uint32)
-    for i in range(32):
-        square[i] = _gf2_matrix_times(mat, mat[i])
-    return square
-
-
-@njit(cache=True, fastmath=True)
-def _build_crc32c_matrix() -> np.ndarray:
-    """Build the basic CRC32C transformation matrix - JIT compiled."""
-    matrix = np.empty(32, dtype=np.uint32)
-    for i in range(32):
-        val = np.uint32(1) << i
-        if val & np.uint32(1):
-            val = (val >> np.uint32(1)) ^ CRC32C_POLY
-        else:
-            val >>= np.uint32(1)
-        matrix[i] = val
-    return matrix
-
-
-@njit(cache=True, fastmath=True)
-def _crc32c_combine_jit(crc1: np.uint32, crc2: np.uint32, len2: np.uint64) -> np.uint32:
-    """JIT-compiled CRC32C combination using polynomial arithmetic in GF(2).
-    
-    Args:
-        crc1: CRC32C of first data block
-        crc2: CRC32C of second data block
-        len2: Length of second data block in bytes
-        
-    Returns:
-        Combined CRC32C of concatenated data blocks
-    """
-    if len2 == 0:
-        return crc1
-
-    # Build transformation matrices
-    odd = _build_crc32c_matrix()
-    even = _gf2_matrix_square(odd)
-    odd = _gf2_matrix_square(even)
-
-    # Apply the length in bits
-    bits = len2 * np.uint64(8)
-    
-    # Do the transformation for each bit in len2
-    result = crc1
-    while bits > 0:
-        if bits & np.uint64(1):
-            result = _gf2_matrix_times(odd, result)
-        bits >>= np.uint64(1)
-        if bits > 0:
-            even = _gf2_matrix_square(odd)
-            odd = _gf2_matrix_square(even)
-
-    # XOR with crc2
-    return result ^ crc2
-
-
-def _crc32c_combine(crc1: int, crc2: int, len2: int) -> int:
-    """Combine two CRC32C checksums mathematically.
-    
-    Wrapper for the JIT-compiled version with proper type conversion.
-    
-    Args:
-        crc1: CRC32C of first data block
-        crc2: CRC32C of second data block  
-        len2: Length of second data block in bytes
-        
-    Returns:
-        Combined CRC32C of concatenated data blocks
-    """
-    result = _crc32c_combine_jit(
-        np.uint32(crc1),
-        np.uint32(crc2),
-        np.uint64(len2),
-    )
-    return int(result)
-
-
-def _combine_crc32c_checksums(checksum_parts: list[tuple[int, int, int]]) -> int:
-    """Combine partial CRC32C checksums mathematically without re-reading data.
-
-    Args:
-        checksum_parts: List of (byte_offset, crc32c, byte_length) tuples
-
-    Returns:
-        Combined CRC32C checksum
-
-    Raises:
-        ValueError: If checksum parts list is empty or has gaps/overlaps
-    """
-    if not checksum_parts:
-        msg = "Cannot combine empty checksum parts"
-        raise ValueError(msg)
-
-    # Sort by byte offset to ensure file order
-    sorted_parts = sorted(checksum_parts, key=lambda x: x[0])
-
-    # Verify no gaps or overlaps
-    for i in range(len(sorted_parts) - 1):
-        current_end = sorted_parts[i][0] + sorted_parts[i][2]
-        next_start = sorted_parts[i + 1][0]
-        if current_end != next_start:
-            msg = (
-                f"Gap or overlap detected: "
-                f"current ends at {current_end}, next starts at {next_start}"
-            )
-            raise ValueError(msg)
-
-    # Start with first CRC
-    combined_crc = sorted_parts[0][1]
-
-    # Combine each subsequent CRC using mathematical combination
-    for i in range(1, len(sorted_parts)):
-        _, crc, length = sorted_parts[i]
-        combined_crc = _crc32c_combine(combined_crc, crc, length)
-
-    return combined_crc
 
 
 def to_zarr(  # noqa: PLR0913, PLR0915

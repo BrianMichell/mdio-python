@@ -103,7 +103,6 @@ def header_scan_worker(
     raw_bytes = traces.trace_buffer_array.tobytes()
     crc = google_crc32c.Checksum(raw_bytes)
     partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
-    print(f"Partial CRC32C for trace range {trace_range}: {partial_crc32c}")
     
     # Calculate byte offset and length
     trace_header_size = segy_file.spec.trace.header.itemsize
@@ -111,7 +110,7 @@ def header_scan_worker(
     sample_size = 4  # This will always be a 4-byte float
     num_samples = len(segy_file.sample_labels)
     trace_size = trace_header_size + (num_samples * sample_size)
-    
+
     byte_offset = 3600 + start_trace * trace_size
     byte_length = len(raw_bytes)
     

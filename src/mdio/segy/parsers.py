@@ -29,7 +29,7 @@ def parse_headers(
     subset: list[str] | None = None,
     block_size: int = 10000,
     progress_bar: bool = True,
-    calculate_checksum: bool = False,
+    calculate_checksum: bool = True,
 ) -> HeaderArray | tuple[HeaderArray, int]:
     """Read and parse given `byte_locations` from SEG-Y file.
 
@@ -45,6 +45,32 @@ def parse_headers(
         HeaderArray if calculate_checksum is False.
         Tuple of (HeaderArray, combined_crc32c) if calculate_checksum is True.
     """
+
+    from crc32c_dist_rs import DistributedCRC32C
+    from segy import SegyFile
+    from upath import UPath
+    import crc32c
+
+    # Use UPath for cloud/filesystem agnostic reading
+    path = UPath(segy_file_kwargs["url"])
+    raw_bytes = path.fs.read_block(
+        fn=str(path),
+        offset=0,
+        length=3600,
+    )
+
+    # Calculate trace size to determine total data length
+    # We need to open the file briefly to get the spec
+    sf = SegyFile(**segy_file_kwargs)
+    trace_header_size = sf.spec.trace.header.itemsize
+    sample_size = 4  # This will always be a 4-byte float
+    num_samples = len(sf.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+
+    # Total length is header (3600) + trace data
+    total_len = 3600 + num_traces * trace_size
+    combiner = DistributedCRC32C(raw_bytes, total_len)
+
     trace_count = num_traces
     n_blocks = int(ceil(trace_count / block_size))
 
@@ -86,15 +112,19 @@ def parse_headers(
     if not calculate_checksum:
         # Merge headers and return
         return np.concatenate(results)
-    
-    # Separate headers and checksums
-    headers: list[HeaderArray] = [r[0] for r in results]
-    checksum_parts: list[tuple[int, int, int]] = [r[1] for r in results]
-    
-    # Combine checksums
-    from mdio.segy.blocked_io import _combine_crc32c_checksums
-    
-    combined_crc = _combine_crc32c_checksums(checksum_parts)
-    
+
+        # Separate headers and checksums, add fragments to combiner
+
+    # Get final combined checksum
+    headers: list[HeaderArray] = []
+    for result in results:
+        headers.append(result[0])
+        byte_offset, partial_crc, byte_length = result[1]
+        combiner.add_fragment(byte_offset, byte_length, partial_crc)
+    combined_crc = combiner.try_finalize()
+    if combined_crc is None:
+        msg = "Failed to finalize CRC32C - file may not be fully covered"
+        raise ValueError(msg)
+
     # Merge headers and return with checksum
     return np.concatenate(headers), combined_crc
