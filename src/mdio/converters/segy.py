@@ -142,23 +142,30 @@ def _scan_for_headers(
     segy_file_info: SegyFileInfo,
     template: AbstractDatasetTemplate,
     grid_overrides: dict[str, Any] | None = None,
-) -> tuple[list[Dimension], SegyHeaderArray, int]:
+    calculate_checksum: bool = False,
+) -> tuple[list[Dimension], SegyHeaderArray, int | None]:
     """Extract trace dimensions and index headers from the SEG-Y file.
 
     This is an expensive operation.
     It scans the SEG-Y file in chunks by using ProcessPoolExecutor
-    Also calculates CRC32C checksum for all trace data during scanning.
+    Optionally calculates CRC32C checksum for all trace data during scanning.
     """
     full_chunk_size = template.full_chunk_size
-    segy_dimensions, chunk_size, segy_headers, trace_data_crc32c = get_grid_plan(
+    grid_plan_result = get_grid_plan(
         segy_file_kwargs=segy_file_kwargs,
         segy_file_info=segy_file_info,
         return_headers=True,
         template=template,
         chunksize=full_chunk_size,
         grid_overrides=grid_overrides,
-        calculate_checksum=True,
+        calculate_checksum=calculate_checksum,
     )
+
+    if calculate_checksum:
+        segy_dimensions, chunk_size, segy_headers, trace_data_crc32c = grid_plan_result
+    else:
+        segy_dimensions, chunk_size, segy_headers = grid_plan_result
+        trace_data_crc32c = None
     if full_chunk_size != chunk_size:
         # TODO(Dmitriy): implement grid overrides
         # https://github.com/TGSAI/mdio-python/issues/585
@@ -537,11 +544,15 @@ def segy_to_mdio(  # noqa PLR0913
     }
     segy_file_info = _read_segy_file_info(segy_file_kwargs)
 
+    # Only calculate CRC32C when raw headers are enabled
+    calculate_checksum = os.getenv("MDIO__IMPORT__RAW_HEADERS") in ("1", "true", "yes", "on")
+
     segy_dimensions, segy_headers, trace_data_crc32c = _scan_for_headers(
         segy_file_kwargs,
         segy_file_info,
         template=mdio_template,
         grid_overrides=grid_overrides,
+        calculate_checksum=calculate_checksum,
     )
     grid = _build_and_check_grid(segy_dimensions, segy_file_info, segy_headers)
 
@@ -608,28 +619,30 @@ def segy_to_mdio(  # noqa PLR0913
         data_variable_name=default_variable_name,
     )
 
-    # Calculate total trace data length for CRC32C combination
-    trace_header_size = segy_spec.trace.header.itemsize
-    # sample_size = segy_spec.trace.sample.itemsize
-    sample_size = 4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
-    num_samples = len(segy_file_info.sample_labels)
-    trace_size = trace_header_size + (num_samples * sample_size)
-    trace_data_length = segy_file_info.num_traces * trace_size
+    # Store the final CRC32C checksum in the Zarr store attributes only when calculated
+    if trace_data_crc32c is not None:
+        # Calculate total trace data length for CRC32C combination
+        trace_header_size = segy_spec.trace.header.itemsize
+        # sample_size = segy_spec.trace.sample.itemsize
+        sample_size = 4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
+        num_samples = len(segy_file_info.sample_labels)
+        trace_size = trace_header_size + (num_samples * sample_size)
+        trace_data_length = segy_file_info.num_traces * trace_size
 
-    # The trace_data_crc32c is now the full file CRC32C from DistributedCRC32C
-    final_crc32c = trace_data_crc32c
+        # The trace_data_crc32c is now the full file CRC32C from DistributedCRC32C
+        final_crc32c = trace_data_crc32c
 
-    # Store the final CRC32C checksum in the Zarr store attributes
-    from mdio.api.io import _normalize_storage_options
-    from zarr import open_group as zarr_open_group
+        # Store the final CRC32C checksum in the Zarr store attributes
+        from mdio.api.io import _normalize_storage_options
+        from zarr import open_group as zarr_open_group
 
-    storage_options = _normalize_storage_options(output_path)
-    zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
-    zarr_group.attrs.update(
-        {
-            "segy_input_crc32c": final_crc32c,  # Store as integer, not hex string
-            "crc32c_algorithm": "CRC32C",
-            "checksum_scope": "full_file",
-            "checksum_library": "google-crc32c",
-        }
-    )
+        storage_options = _normalize_storage_options(output_path)
+        zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
+        zarr_group.attrs.update(
+            {
+                "segy_input_crc32c": final_crc32c,  # Store as integer, not hex string
+                "crc32c_algorithm": "CRC32C",
+                "checksum_scope": "full_file",
+                "checksum_library": "google-crc32c",
+            }
+        )

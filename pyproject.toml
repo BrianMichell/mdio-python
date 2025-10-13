@@ -81,7 +81,7 @@ docs = [
 required-version = ">=0.8.17"
 
 [tool.uv.sources]
-crc32c_dist_rs = { path = "/home/brian_michell_tgs_com/source/crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.3-cp313-cp313-manylinux_2_34_x86_64.whl" }
+crc32c_dist_rs = { path = "/home/brian_michell_tgs_com/source/crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }
 
 [tool.ruff]
 target-version = "py311"

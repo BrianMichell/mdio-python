@@ -38,7 +38,6 @@ def set_env_vars(monkeypatch: Generator[pytest.MonkeyPatch]) -> None:
     """Set environment variables for the Teapot dome tests."""
     monkeypatch.setenv("MDIO__IMPORT__SAVE_SEGY_FILE_HEADER", "true")
     monkeypatch.setenv("MDIO__IMPORT__RAW_HEADERS", "true")
-    monkeypatch.setenv("MDIO__IMPORT__CPU_COUNT", "1")
 
 
 @pytest.fixture
