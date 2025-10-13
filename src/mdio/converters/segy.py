@@ -396,22 +396,6 @@ def _add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, A
         dataset.metadata.attributes["gridOverrides"] = grid_overrides
 
 
-def _combine_header_and_trace_crc32c(headers_crc32c: int, trace_data_crc32c: int, trace_data_length: int) -> int:
-    """Combine header and trace data CRC32C checksums into a single file checksum.
-
-    Args:
-        headers_crc32c: CRC32C checksum of the file headers (text + binary = 3600 bytes)
-        trace_data_crc32c: CRC32C checksum of all trace data
-        trace_data_length: Total length of trace data in bytes
-
-    Returns:
-        Combined CRC32C checksum for the entire SEG-Y file
-    """
-    # Import the optimized CRC32C combination function from blocked_io
-    from mdio.segy.blocked_io import _crc32c_combine
-
-    # Use the same mathematical combination used for trace checksums
-    return _crc32c_combine(headers_crc32c, trace_data_crc32c, trace_data_length)
 
 
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
@@ -632,12 +616,8 @@ def segy_to_mdio(  # noqa PLR0913
     trace_size = trace_header_size + (num_samples * sample_size)
     trace_data_length = segy_file_info.num_traces * trace_size
 
-    # Combine header and trace data checksums into final file checksum
-    final_crc32c = _combine_header_and_trace_crc32c(
-        headers_crc32c=segy_file_info.headers_crc32c,
-        trace_data_crc32c=trace_data_crc32c,
-        trace_data_length=trace_data_length,
-    )
+    # The trace_data_crc32c is now the full file CRC32C from DistributedCRC32C
+    final_crc32c = trace_data_crc32c
 
     # Store the final CRC32C checksum in the Zarr store attributes
     from mdio.api.io import _normalize_storage_options
