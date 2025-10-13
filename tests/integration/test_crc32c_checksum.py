@@ -8,6 +8,7 @@ from pathlib import Path
 
 import google_crc32c
 import pytest
+import zarr
 from tests.integration.test_segy_import_export_masked import COCA_3D_CONF
 from tests.integration.test_segy_import_export_masked import GATHER_2D_CONF
 from tests.integration.test_segy_import_export_masked import GATHER_3D_CONF
@@ -22,7 +23,6 @@ from mdio import segy_to_mdio
 from mdio.builder.template_registry import TemplateRegistry
 from mdio.segy._workers import info_worker
 from mdio.segy.parsers import parse_headers
-import zarr
 
 
 def get_expected_crc32c(segy_path: Path) -> int:
@@ -66,8 +66,8 @@ class TestCRC32CChecksum:
         ids=["2d_stack", "3d_stack", "2d_gather", "3d_gather", "2d_streamer", "3d_streamer", "3d_coca"],
     )
     def test_ingestion_stores_correct_crc32c_for_all_configurations(
-        self, test_conf: MaskedExportConfig, tmp_path, monkeypatch
-    ):
+        self, test_conf: MaskedExportConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that CRC32C checksums are correctly stored for synthetic files from masked export tests."""
         # Enable checksum calculation via environment variable
         monkeypatch.setenv("MDIO__IMPORT__RAW_HEADERS", "true")
@@ -109,7 +109,7 @@ class TestCRC32CChecksum:
         assert store.attrs.get("checksum_scope") == "full_file"
         assert store.attrs.get("checksum_library") == "google-crc32c"
 
-    def test_corrupted_data_detects_changes(self, tmp_path, monkeypatch):
+    def test_corrupted_data_detects_changes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that checksums detect data corruption using synthetic streamer data."""
         # Enable checksum calculation via environment variable
         monkeypatch.setenv("MDIO__IMPORT__RAW_HEADERS", "true")
