@@ -50,6 +50,7 @@ print(f"Library: {store.attrs['checksum_library']}")
 ```
 
 Expected output:
+
 ```
 CRC32C: 305441741
 Algorithm: CRC32C
@@ -72,30 +73,30 @@ import google_crc32c
 
 def calculate_file_crc32c(filepath: str, chunk_size: int = 1024 * 1024) -> int:
     """Calculate CRC32C checksum of a file.
-    
+
     Args:
         filepath: Path to file
         chunk_size: Size of chunks to read (default 1MB)
-        
+
     Returns:
         CRC32C checksum as integer
     """
     checksum = google_crc32c.Checksum()
-    
+
     with open(filepath, 'rb') as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:
                 break
             checksum.update(chunk)
-    
+
     return int.from_bytes(checksum.digest(), byteorder='big')
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <segy_file>")
         sys.exit(1)
-    
+
     filepath = sys.argv[1]
     crc = calculate_file_crc32c(filepath)
     print(f"CRC32C: 0x{crc:08x}")
@@ -103,6 +104,7 @@ if __name__ == "__main__":
 ```
 
 Usage:
+
 ```bash
 python calculate_crc32c.py input.segy
 ```
@@ -126,16 +128,16 @@ import google_crc32c
 
 def verify_checksum(segy_path: str, mdio_path: str) -> bool:
     """Verify that the stored checksum matches the actual file checksum.
-    
+
     Args:
         segy_path: Path to original SEG-Y file
         mdio_path: Path to output MDIO store
-        
+
     Returns:
         True if checksums match, False otherwise
     """
     import zarr
-    
+
     # Calculate actual checksum
     checksum = google_crc32c.Checksum()
     with open(segy_path, 'rb') as f:
@@ -144,18 +146,18 @@ def verify_checksum(segy_path: str, mdio_path: str) -> bool:
             if not chunk:
                 break
             checksum.update(chunk)
-    
+
     actual_crc = int.from_bytes(checksum.digest(), byteorder='big')
-    
+
     # Get stored checksum
     store = zarr.open_group(mdio_path, mode='r')
     stored_crc_hex = store.attrs['segy_input_crc32c']
     stored_crc = int(stored_crc_hex, 16)
-    
+
     print(f"Actual CRC32C:  0x{actual_crc:08x}")
     print(f"Stored CRC32C:  {stored_crc_hex}")
     print(f"Match: {actual_crc == stored_crc}")
-    
+
     return actual_crc == stored_crc
 
 # Usage
@@ -235,7 +237,7 @@ Verify that checksum parts have no gaps:
 # The _combine_crc32c_checksums() function already checks for gaps
 # If you see "Gap or overlap detected" error, check:
 # 1. Trace size calculations
-# 2. Byte offset calculations  
+# 2. Byte offset calculations
 # 3. Worker chunk boundaries
 ```
 
@@ -245,7 +247,8 @@ Verify that checksum parts have no gaps:
 
 **Problem**: `ModuleNotFoundError: No module named 'google_crc32c'`
 
-**Solution**: 
+**Solution**:
+
 ```bash
 uv sync
 # or
@@ -257,11 +260,13 @@ pip install google-crc32c>=1.5.0
 **Problem**: Stored checksum doesn't match manual calculation
 
 **Possible Causes**:
+
 1. Byte order issue in conversion
 2. Gap in byte ranges being checksummed
 3. Incorrect trace size calculation
 
 **Debug Steps**:
+
 1. Add logging to see all byte ranges being checksummed
 2. Verify header checksum separately (3600 bytes)
 3. Check trace size calculation matches file structure
@@ -271,6 +276,7 @@ pip install google-crc32c>=1.5.0
 **Problem**: Ingestion is slower with checksum
 
 **Solutions**:
+
 1. Verify using hardware-accelerated `google-crc32c` (not pure Python)
 2. Check that raw bytes are being read efficiently
 3. Profile to see if checksum calculation is the bottleneck
@@ -300,23 +306,23 @@ def validate_ingestion_checksum(segy_path: str, mdio_path: str) -> None:
     """Validate that ingestion checksum matches actual file."""
     print(f"Validating checksum for {segy_path} -> {mdio_path}")
     print("-" * 60)
-    
+
     # Calculate actual file checksum
     print("Calculating actual file checksum...")
     actual_crc = calculate_file_checksum(Path(segy_path))
     print(f"Actual CRC32C:  {actual_crc}")
-    
+
     # Get stored checksum
     print("\nReading stored checksum...")
     store = zarr.open_group(mdio_path, mode='r')
-    
+
     if 'segy_input_crc32c' not in store.attrs:
         print("ERROR: No checksum found in store attributes!")
         sys.exit(1)
-    
+
     stored_crc = store.attrs['segy_input_crc32c']
     print(f"Stored CRC32C:  {stored_crc}")
-    
+
     # Compare
     print("\n" + "=" * 60)
     if actual_crc == stored_crc:
@@ -326,7 +332,7 @@ def validate_ingestion_checksum(segy_path: str, mdio_path: str) -> None:
         print(f"  Expected: {actual_crc}")
         print(f"  Got:      {stored_crc}")
         sys.exit(1)
-    
+
     # Print additional metadata
     print("\nChecksum Metadata:")
     print(f"  Algorithm: {store.attrs.get('crc32c_algorithm', 'N/A')}")
@@ -337,7 +343,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print(f"Usage: {sys.argv[0]} <segy_file> <mdio_output>")
         sys.exit(1)
-    
+
     validate_ingestion_checksum(sys.argv[1], sys.argv[2])
 ```
 
@@ -346,4 +352,3 @@ Save as `validate_checksum.py` and run:
 ```bash
 python validate_checksum.py input.segy output.mdio
 ```
-

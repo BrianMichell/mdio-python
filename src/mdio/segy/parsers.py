@@ -45,11 +45,9 @@ def parse_headers(
         HeaderArray if calculate_checksum is False.
         Tuple of (HeaderArray, combined_crc32c) if calculate_checksum is True.
     """
-
     from crc32c_dist_rs import DistributedCRC32C
     from segy import SegyFile
     from upath import UPath
-    import crc32c
 
     # Use UPath for cloud/filesystem agnostic reading
     path = UPath(segy_file_kwargs["url"])
@@ -98,7 +96,11 @@ def parse_headers(
         )
 
         if progress_bar is True:
-            desc = "Scanning SEG-Y & calculating checksum" if calculate_checksum else "Scanning SEG-Y for geometry attributes"
+            desc = (
+                "Scanning SEG-Y & calculating checksum"
+                if calculate_checksum
+                else "Scanning SEG-Y for geometry attributes"
+            )
             lazy_work = tqdm(
                 iterable=lazy_work,
                 total=n_blocks,

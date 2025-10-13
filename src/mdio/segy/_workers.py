@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import TypedDict
@@ -75,14 +74,14 @@ def header_scan_worker(
 
     start_trace, end_trace = trace_range
     trace_indices = list(range(start_trace, end_trace))
-    
+
     # Read full trace data (header + samples) ONCE using the raw trace wrapper
     # This avoids duplicate I/O - we get both headers and raw bytes in a single read
     traces = SegyFileRawTraceWrapper(segy_file, trace_indices)
-    
+
     # Extract headers from the data we already read (no additional I/O)
     trace_header = traces.header
-    
+
     if subset is not None:
         # struct field selection needs a list, not a tuple; a subset is a tuple from the template.
         trace_header = trace_header[list(subset)]
@@ -103,7 +102,7 @@ def header_scan_worker(
     raw_bytes = traces.trace_buffer_array.tobytes()
     crc = google_crc32c.Checksum(raw_bytes)
     partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
-    
+
     # Calculate byte offset and length
     trace_header_size = segy_file.spec.trace.header.itemsize
     # sample_size = segy_file.spec.trace.sample.itemsize
@@ -113,9 +112,9 @@ def header_scan_worker(
 
     byte_offset = 3600 + start_trace * trace_size
     byte_length = len(raw_bytes)
-    
+
     checksum_info = (byte_offset, partial_crc32c, byte_length)
-    
+
     return HeaderArray(trace_header), checksum_info
 
 

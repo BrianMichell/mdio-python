@@ -33,7 +33,11 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     return_headers: bool = False,
     grid_overrides: dict[str, Any] | None = None,
     calculate_checksum: bool = False,
-) -> tuple[list[Dimension], tuple[int, ...]] | tuple[list[Dimension], tuple[int, ...], HeaderArray] | tuple[list[Dimension], tuple[int, ...], HeaderArray, int]:
+) -> (
+    tuple[list[Dimension], tuple[int, ...]]
+    | tuple[list[Dimension], tuple[int, ...], HeaderArray]
+    | tuple[list[Dimension], tuple[int, ...], HeaderArray, int]
+):
     """Infer dimension ranges, and increments.
 
     Generates multiple dimensions with the following steps:
@@ -66,7 +70,7 @@ def get_grid_plan(  # noqa:  C901, PLR0913
         subset=horizontal_coordinates,
         calculate_checksum=calculate_checksum,
     )
-    
+
     # Unpack result based on whether checksum was calculated
     if calculate_checksum:
         headers_subset, trace_data_crc32c = parse_result
@@ -98,9 +102,9 @@ def get_grid_plan(  # noqa:  C901, PLR0913
 
     if return_headers and calculate_checksum:
         return dimensions, chunksize, headers_subset, trace_data_crc32c
-    elif return_headers:
+    if return_headers:
         return dimensions, chunksize, headers_subset
-    elif calculate_checksum:
+    if calculate_checksum:
         return dimensions, chunksize, None, trace_data_crc32c
 
     return dimensions, chunksize

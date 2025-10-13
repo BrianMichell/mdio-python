@@ -1,13 +1,15 @@
 # CRC32C Checksum Implementation for SEG-Y Ingestion
 
 ## Overview
+
 This document describes the implementation of distributed CRC32C checksum calculation for SEG-Y files during the `segy_to_mdio` ingestion process.
 
 ## Implementation Summary
 
 The CRC32C checksum is calculated for **every single byte** of the input SEG-Y file in a distributed manner across parallel workers. The checksum covers:
+
 - Text header (3200 bytes)
-- Binary header (400 bytes)  
+- Binary header (400 bytes)
 - All trace data (headers + samples for every trace)
 
 ### Architecture
@@ -30,11 +32,13 @@ SEG-Y File (3600 + trace_data bytes)
 ## Changes Made
 
 ### 1. Dependencies (`pyproject.toml`)
+
 - Added `google-crc32c>=1.5.0` to dependencies
 
 ### 2. Data Structures (`src/mdio/segy/_workers.py`)
 
 #### Modified `SegyFileInfo` dataclass:
+
 ```python
 @dataclass
 class SegyFileInfo:
@@ -44,6 +48,7 @@ class SegyFileInfo:
 ```
 
 #### New `TraceWorkerResult` dataclass:
+
 ```python
 @dataclass
 class TraceWorkerResult:
@@ -56,6 +61,7 @@ class TraceWorkerResult:
 ### 3. Header Checksum Calculation (`src/mdio/segy/_workers.py`)
 
 #### Modified `info_worker()`:
+
 - Reads raw text header bytes (3200 bytes) via `segy_file.fs.read_block()`
 - Reads raw binary header bytes (400 bytes) via `segy_file.fs.read_block()`
 - Calculates CRC32C for the combined 3600 bytes
@@ -64,6 +70,7 @@ class TraceWorkerResult:
 ### 4. Trace Data Checksum Calculation (`src/mdio/segy/_workers.py`)
 
 #### Modified `trace_worker()`:
+
 - Calculates byte offset and length for the trace range being processed
 - Reads raw bytes from SEG-Y file using `segy_file.fs.read_block()`
 - Includes all traces in the contiguous range (including dead traces)
@@ -73,12 +80,14 @@ class TraceWorkerResult:
 ### 5. Checksum Combination (`src/mdio/segy/blocked_io.py`)
 
 #### New `_combine_crc32c_checksums()` function:
+
 - Sorts partial checksums by byte offset
 - Verifies no gaps or overlaps in byte ranges
 - Uses `google_crc32c.extend()` to combine partial checksums
 - Returns combined trace data CRC32C
 
 #### Modified `to_zarr()`:
+
 - Collects partial checksums from all workers
 - Combines them using `_combine_crc32c_checksums()`
 - Returns tuple of `(SummaryStatistics, trace_data_crc32c)`
@@ -86,11 +95,13 @@ class TraceWorkerResult:
 ### 6. Final Checksum Storage (`src/mdio/converters/segy.py`)
 
 #### New `_combine_header_and_trace_crc32c()` function:
+
 - Combines header CRC32C with trace data CRC32C
 - Uses `google_crc32c.extend()` for proper CRC32C combination
 - Returns final file checksum
 
 #### Modified `segy_to_mdio()`:
+
 - Captures both statistics and trace_data_crc32c from `blocked_io.to_zarr()`
 - Calculates total trace data length
 - Combines header and trace data checksums
@@ -115,10 +126,12 @@ class TraceWorkerResult:
 ## Testing Recommendations
 
 1. **Verify Checksum Accuracy**:
+
    - Calculate checksum using external tool (e.g., `crc32c` CLI utility)
    - Compare with distributed calculation result
-   
+
 2. **Test Edge Cases**:
+
    - Files with dead traces
    - Very small files (single chunk)
    - Very large files (many chunks)
@@ -177,8 +190,8 @@ The `google-crc32c` package provides hardware-accelerated CRC32C calculation usi
 ## Performance Impact
 
 The checksum calculation adds minimal overhead:
+
 - Header checksum: ~negligible (3600 bytes, calculated once)
 - Trace data checksum: Calculated while data is already in memory
 - No additional file reads beyond what's already happening
 - Combination overhead: ~O(N) where N is number of chunks
-

@@ -29,7 +29,6 @@ from mdio.segy.creation import concat_files
 from mdio.segy.creation import serialize_to_segy_stack
 from mdio.segy.utilities import find_trailing_ones_index
 
-
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from segy import SegyFactory
@@ -53,8 +52,6 @@ def _update_stats(final_stats: SummaryStatistics, partial_stats: SummaryStatisti
     final_stats.max = max(final_stats.max, partial_stats.max)
     final_stats.sum += partial_stats.sum
     final_stats.sum_squares += partial_stats.sum_squares
-
-
 
 
 def to_zarr(  # noqa: PLR0913, PLR0915

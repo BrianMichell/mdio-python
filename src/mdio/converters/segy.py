@@ -403,8 +403,6 @@ def _add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, A
         dataset.metadata.attributes["gridOverrides"] = grid_overrides
 
 
-
-
 def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> AbstractDatasetTemplate:
     """Add raw headers capability to the MDIO template by monkey-patching its _add_variables method.
 
@@ -624,7 +622,9 @@ def segy_to_mdio(  # noqa PLR0913
         # Calculate total trace data length for CRC32C combination
         trace_header_size = segy_spec.trace.header.itemsize
         # sample_size = segy_spec.trace.sample.itemsize
-        sample_size = 4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
+        sample_size = (
+            4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
+        )
         num_samples = len(segy_file_info.sample_labels)
         trace_size = trace_header_size + (num_samples * sample_size)
         trace_data_length = segy_file_info.num_traces * trace_size
@@ -633,8 +633,9 @@ def segy_to_mdio(  # noqa PLR0913
         final_crc32c = trace_data_crc32c
 
         # Store the final CRC32C checksum in the Zarr store attributes
-        from mdio.api.io import _normalize_storage_options
         from zarr import open_group as zarr_open_group
+
+        from mdio.api.io import _normalize_storage_options
 
         storage_options = _normalize_storage_options(output_path)
         zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
