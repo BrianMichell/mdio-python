@@ -106,9 +106,8 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
         for future in iterable:
             result: TraceWorkerResult | None = future.result()
-            if result is not None:
-                if result.statistics is not None:
-                    _update_stats(final_stats, result.statistics)
+            if result is not None and result.statistics is not None:
+                _update_stats(final_stats, result.statistics)
 
     # Xarray doesn't directly support incremental attribute updates when appending to an existing Zarr store.
     # HACK: We will update the array attribute using zarr's API directly.

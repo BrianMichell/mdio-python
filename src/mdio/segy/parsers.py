@@ -10,8 +10,11 @@ from math import ceil
 from typing import TYPE_CHECKING
 
 import numpy as np
+from crc32c_dist_rs import DistributedCRC32C
 from psutil import cpu_count
+from segy import SegyFile
 from tqdm.auto import tqdm
+from upath import UPath
 
 from mdio.segy._workers import header_scan_worker
 
@@ -23,7 +26,25 @@ if TYPE_CHECKING:
 default_cpus = cpu_count(logical=True)
 
 
-def parse_headers(
+def _finalize_checksum(
+    results: list[tuple[HeaderArray, tuple[int, int, int]]], combiner: DistributedCRC32C
+) -> tuple[HeaderArray, int]:
+    """Finalize the checksum from the results of the header scan."""
+    headers: list[HeaderArray] = []
+    for result in results:
+        headers.append(result[0])
+        byte_offset, partial_crc, byte_length = result[1]
+        combiner.add_fragment(byte_offset, byte_length, partial_crc)
+    combined_crc = combiner.try_finalize()
+    if combined_crc is None:
+        msg = "Failed to finalize CRC32C - file may not be fully covered"
+        raise ValueError(msg)
+
+    # Merge headers and return with checksum
+    return np.concatenate(headers), combined_crc
+
+
+def parse_headers(  # noqa: PLR0913
     segy_file_kwargs: SegyFileArguments,
     num_traces: int,
     subset: list[str] | None = None,
@@ -45,10 +66,6 @@ def parse_headers(
         HeaderArray if calculate_checksum is False.
         Tuple of (HeaderArray, combined_crc32c) if calculate_checksum is True.
     """
-    from crc32c_dist_rs import DistributedCRC32C
-    from segy import SegyFile
-    from upath import UPath
-
     # Use UPath for cloud/filesystem agnostic reading
     path = UPath(segy_file_kwargs["url"])
     raw_bytes = path.fs.read_block(
@@ -115,18 +132,4 @@ def parse_headers(
         # Merge headers and return
         return np.concatenate(results)
 
-        # Separate headers and checksums, add fragments to combiner
-
-    # Get final combined checksum
-    headers: list[HeaderArray] = []
-    for result in results:
-        headers.append(result[0])
-        byte_offset, partial_crc, byte_length = result[1]
-        combiner.add_fragment(byte_offset, byte_length, partial_crc)
-    combined_crc = combiner.try_finalize()
-    if combined_crc is None:
-        msg = "Failed to finalize CRC32C - file may not be fully covered"
-        raise ValueError(msg)
-
-    # Merge headers and return with checksum
-    return np.concatenate(headers), combined_crc
+    return _finalize_checksum(results, combiner)

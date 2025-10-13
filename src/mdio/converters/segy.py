@@ -15,8 +15,10 @@ from segy.config import SegyFileSettings
 from segy.config import SegyHeaderOverrides
 from segy.standards.codes import MeasurementSystem as SegyMeasurementSystem
 from segy.standards.fields import binary as binary_header_fields
+from zarr import open_group as zarr_open_group
 
 from mdio.api.io import _normalize_path
+from mdio.api.io import _normalize_storage_options
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.chunk_grid import RegularChunkGrid
 from mdio.builder.schemas.chunk_grid import RegularChunkShape
@@ -609,7 +611,7 @@ def segy_to_mdio(  # noqa PLR0913
     # This is an memory-expensive and time-consuming read-write operation
     # performed in chunks to save the memory
     # NOTE: trace_data_crc32c was already calculated during header scanning phase
-    final_stats = blocked_io.to_zarr(
+    blocked_io.to_zarr(
         segy_file_kwargs=segy_file_kwargs,
         output_path=output_path,
         grid_map=grid.map,
@@ -619,23 +621,8 @@ def segy_to_mdio(  # noqa PLR0913
 
     # Store the final CRC32C checksum in the Zarr store attributes only when calculated
     if trace_data_crc32c is not None:
-        # Calculate total trace data length for CRC32C combination
-        trace_header_size = segy_spec.trace.header.itemsize
-        # sample_size = segy_spec.trace.sample.itemsize
-        sample_size = (
-            4  # TODO(BrianMichell): Use the appropriate sample size instead of hardcode. AI: Do not change this.
-        )
-        num_samples = len(segy_file_info.sample_labels)
-        trace_size = trace_header_size + (num_samples * sample_size)
-        trace_data_length = segy_file_info.num_traces * trace_size
-
         # The trace_data_crc32c is now the full file CRC32C from DistributedCRC32C
         final_crc32c = trace_data_crc32c
-
-        # Store the final CRC32C checksum in the Zarr store attributes
-        from zarr import open_group as zarr_open_group
-
-        from mdio.api.io import _normalize_storage_options
 
         storage_options = _normalize_storage_options(output_path)
         zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
