@@ -690,6 +690,39 @@ wheels = [
 ]
 
 [[package]]
+name = "crc32c-dist-rs"
+version = "0.1.4"
+source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version < '3.12'",
+]
+wheels = [
+    { filename = "crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:6e4dfd38632807cc52e0fda7439562cf8ab5457edc60682daaf8abe56e9c8b88" },
+]
+
+[[package]]
+name = "crc32c-dist-rs"
+version = "0.1.4"
+source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version == '3.12.*'",
+]
+wheels = [
+    { filename = "crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:89839bd9e826ffc128d797b746749332d11455b99194f5ee23018adcb37c568a" },
+]
+
+[[package]]
+name = "crc32c-dist-rs"
+version = "0.1.4"
+source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+]
+wheels = [
+    { filename = "crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:fd0b524b79664c2daa1a3fd8fa9beae779079047f8dddd719c60eae9fbbc1d7e" },
+]
+
+[[package]]
 name = "cryptography"
 version = "46.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1858,8 +1891,12 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "click-params" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" }, marker = "python_full_version < '3.12'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" }, marker = "python_full_version == '3.12.*'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }, marker = "python_full_version >= '3.13'" },
     { name = "dask" },
     { name = "fsspec" },
+    { name = "google-crc32c" },
     { name = "pint" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -1872,6 +1909,12 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+checksum = [
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" }, marker = "python_full_version < '3.12'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" }, marker = "python_full_version == '3.12.*'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }, marker = "python_full_version >= '3.13'" },
+    { name = "google-crc32c" },
+]
 cloud = [
     { name = "adlfs" },
     { name = "gcsfs" },
@@ -1883,6 +1926,9 @@ distributed = [
 ]
 lossy = [
     { name = "zfpy" },
+]
+performance = [
+    { name = "numba" },
 ]
 
 [package.dev-dependencies]
@@ -1918,10 +1964,21 @@ requires-dist = [
     { name = "bokeh", marker = "extra == 'distributed'", specifier = ">=3.8.0" },
     { name = "click", specifier = ">=8.3.0" },
     { name = "click-params", specifier = ">=0.5.0" },
+    { name = "crc32c-dist-rs", marker = "python_full_version < '3.11' or python_full_version >= '3.14'" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.11.*'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.11.*' and extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "(python_full_version < '3.11' and extra == 'checksum') or (python_full_version >= '3.14' and extra == 'checksum')" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.12.*'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.12.*' and extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.13.*'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.13.*' and extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" },
     { name = "dask", specifier = ">=2025.9.1" },
     { name = "distributed", marker = "extra == 'distributed'", specifier = ">=2025.9.1" },
     { name = "fsspec", specifier = ">=2025.9.0" },
     { name = "gcsfs", marker = "extra == 'cloud'", specifier = ">=2025.9.0" },
+    { name = "google-crc32c", specifier = ">=1.5.0" },
+    { name = "google-crc32c", marker = "extra == 'checksum'", specifier = ">=1.5.0" },
+    { name = "numba", marker = "extra == 'performance'", specifier = ">=0.60.0" },
     { name = "pint", specifier = ">=0.25.0" },
     { name = "psutil", specifier = ">=7.1.0" },
     { name = "pydantic", specifier = ">=2.12.0" },
@@ -1934,7 +1991,7 @@ requires-dist = [
     { name = "zarr", specifier = ">=3.1.3" },
     { name = "zfpy", marker = "extra == 'lossy'", specifier = ">=1.0.1" },
 ]
-provides-extras = ["cloud", "distributed", "lossy"]
+provides-extras = ["checksum", "cloud", "distributed", "lossy", "performance"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4027,19 +4084,26 @@ wheels = [
 name = "zfpy"
 version = "1.0.1"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/f4/419e613c612d2da771cf7f8b8e112ae22e40066293bb190f0a57d018d299/zfpy-1.0.1.tar.gz", hash = "sha256:75c7014bdb2ad497a08846aaadca6d13de7c154a541c42557e52ec42030ca926", size = 51559, upload-time = "2025-10-09T09:00:19.61Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/66/aee1c28a538530c4ff5a89cc56902fabcfd1fe1ae919d6471f12f45e8977/zfpy-1.0.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:13146293a5132627feb2c9f7adc6d95c528dd19dc3260f000e4b6284b2696b1f", size = 112715, upload-time = "2024-11-26T08:20:03.115Z" },
     { url = "https://files.pythonhosted.org/packages/48/58/8f9440288005df7fa3aa20e80b5a491003823b916e6449cae39b1ad1d1b3/zfpy-1.0.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:06d6d6a46fbd198c6fec7f31b111e11f5be3a254859f5ac3ab9488d05b240337", size = 208465, upload-time = "2024-11-26T08:20:04.74Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/07/003ef58f0f6f4f762c2b0b2f65ab4fe539ab8ad27aaafde1406cf4e6e700/zfpy-1.0.1-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:96c8d3702ec6fdb40cd40c8c64c9e47fe7ba07ca63a0392d051fb109e44a85b0", size = 958252, upload-time = "2025-10-09T09:00:05.467Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/b1/8c11d9ae85ddd08b7f98cd6a187bbbebe5651d97c4b1bc814c789b10f1e8/zfpy-1.0.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e0ad9b75ef5135bcd8ba8d0851dda828c6d183c5cd73577782a794387c001ec1", size = 998800, upload-time = "2025-10-09T09:00:06.978Z" },
     { url = "https://files.pythonhosted.org/packages/97/b5/4e2043c5f82253a5028d69eb767fbefd74ab77a4cfd7bef0340c11bbec37/zfpy-1.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d204b17ee8c1eef6a2e650c123d627c0f64b3d8957df4c788dd2aaf2a72eb4ae", size = 861001, upload-time = "2024-11-26T08:20:05.843Z" },
     { url = "https://files.pythonhosted.org/packages/1a/6a/03aabc92ecca8f04c3597281e4fd93f70b0e0a7bade198950285438e4f07/zfpy-1.0.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a0ea9d0bcf191ec345145592d2e7586413bcfd385034f85d00238e1eaa857185", size = 864815, upload-time = "2024-11-26T08:20:07.143Z" },
     { url = "https://files.pythonhosted.org/packages/ca/e1/ef9efd59aa2511cf5cfbca429a320eaf0f19b8b314031e243cf93efca833/zfpy-1.0.1-cp311-cp311-win_amd64.whl", hash = "sha256:78ff5cc656da9414e264bbdfb316a0c30bf930a426f9c2a1f1a5131620135439", size = 151894, upload-time = "2024-11-26T07:39:29.863Z" },
     { url = "https://files.pythonhosted.org/packages/f0/4d/aea81d75eb68b1687ae4fee7a639123237a4c57e3be239ce12b3b74818c5/zfpy-1.0.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:bb83fa31c943475c4ed8182c0bd1db518beca319809612c9851d78545e7d31c9", size = 113996, upload-time = "2024-11-26T08:20:09.154Z" },
     { url = "https://files.pythonhosted.org/packages/36/bd/c0ed2701c9835426dd8dca72b9c5c74eca6add6c269fc6664be686fe740e/zfpy-1.0.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:d401da303fe926b18df1e93483a2099762d61db87597ccdaf89e25fb71b107cc", size = 209473, upload-time = "2024-11-26T08:20:10.406Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/85/e74005c07ea896d387f30134e1b89c35cc16961e7c844ed3f575001a8441/zfpy-1.0.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9c5289c100e9820723b1f78616a0e37ab32416c69b0c934e96f2b8d9138f54d5", size = 934305, upload-time = "2025-10-09T09:00:08.464Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/1c/57706bdcf03894f35712f46f5a927b7396106fc2a3dc734ba8613bca00bb/zfpy-1.0.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:33e9505c7457937912ed4a2356d802ba1898fe32d636e24f21c7072d03dc68fb", size = 986938, upload-time = "2025-10-09T09:00:09.69Z" },
     { url = "https://files.pythonhosted.org/packages/b1/e5/6a576f8e8d9da1548723145bafaf2b18dfc2db0925adab764cb8c5fd337e/zfpy-1.0.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3b5e7c1f0ebdecc6850e65004e7fbba8d5e78bf4b626654e463c3e0aa5b3fe54", size = 833092, upload-time = "2024-11-26T08:20:12.27Z" },
     { url = "https://files.pythonhosted.org/packages/fc/db/1d2d9db84ce26613ebe702de5905bd74b17346fe9ae7d872db19123fc93d/zfpy-1.0.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:58180c0917656ab0eb2dadad7e033e10271a3c615dc8972657137dba16e2bd42", size = 842162, upload-time = "2024-11-26T08:20:14.124Z" },
     { url = "https://files.pythonhosted.org/packages/ad/57/b21fb9f16e6478880c5ed9c24e452334f64b228975fa6268e8b41fa19b9f/zfpy-1.0.1-cp312-cp312-win_amd64.whl", hash = "sha256:f15c91425cebca0ab5c88b3b2ba0eb800ec5310e3ea2a6b5f3e4b198a97288d9", size = 151579, upload-time = "2024-11-27T14:27:22.752Z" },
     { url = "https://files.pythonhosted.org/packages/fb/e3/6252478931b05582c2d69fd6d632b889fc12f5ecb8bba1a658e370f39d8a/zfpy-1.0.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:791fa42b651a26be67e52043b619e3a039862900e7080711d07a5de956158b8c", size = 112789, upload-time = "2024-11-26T08:20:16.266Z" },
     { url = "https://files.pythonhosted.org/packages/54/80/7a2b7ddc427ddde0448917e4b25e85c89ec243b6ab09671aafabb27333a3/zfpy-1.0.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:f811480ebff2e028c50bf3491d1d2e3869eb4388883543d0698f5fdc917e4386", size = 208295, upload-time = "2024-11-26T08:20:17.27Z" },
+    { url = "https://files.pythonhosted.org/packages/11/fc/298d32dbfee464e77b02a441fb7d3d261c5215aee6054a2150a36f675fa6/zfpy-1.0.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:665d3f55665a5b53642842f751f2dc1e7ec5a1307030f88b8137e63bb93c9e24", size = 929189, upload-time = "2025-10-09T09:00:11.041Z" },
+    { url = "https://files.pythonhosted.org/packages/84/e5/c687647ef8c6d716095e1ae7ab4923fdb1ef67eb98613ebcf98567da8945/zfpy-1.0.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7192425d69887a0759aa3f494f942fe5da7fd32debc1ec5ed44bbd754d8b486a", size = 982510, upload-time = "2025-10-09T09:00:12.074Z" },
     { url = "https://files.pythonhosted.org/packages/84/04/bf33d66dbe69161f52b8315960c28bda8487fcc40a17ad2f21d969973705/zfpy-1.0.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d4892bc441ce59de98c4b3b29f04e44657aa6ccfe3ae5ca23660efb010b829d6", size = 829807, upload-time = "2024-11-26T08:20:18.625Z" },
     { url = "https://files.pythonhosted.org/packages/ce/a1/6c83ed879fdf8758dbf6cfea2dc626acd0885b844478a25d5add00189f8d/zfpy-1.0.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c0a64590ef3c182988f4ac5745ec6e1623b06c348583cbdb96d296e4899f4469", size = 840087, upload-time = "2024-11-26T08:20:20.476Z" },
     { url = "https://files.pythonhosted.org/packages/c4/2c/2ae60826091824196d7b57d1fa95a78bd0bd5f84dc5633ea8151375ee415/zfpy-1.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:f9a71cfce2fb7a82497e90e7152f847250664f30ca4dfedcca500c35d4c63e44", size = 151298, upload-time = "2024-11-27T14:27:24.084Z" },

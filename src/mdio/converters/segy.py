@@ -140,14 +140,16 @@ def _scan_for_headers(
     segy_file_info: SegyFileInfo,
     template: AbstractDatasetTemplate,
     grid_overrides: dict[str, Any] | None = None,
-) -> tuple[list[Dimension], SegyHeaderArray]:
+) -> tuple[list[Dimension], SegyHeaderArray, int | None]:
     """Extract trace dimensions and index headers from the SEG-Y file.
 
     This is an expensive operation.
     It scans the SEG-Y file in chunks by using ProcessPoolExecutor
+    Optionally calculates CRC32C checksum for all trace data during scanning.
     """
     full_chunk_size = template.full_chunk_size
-    segy_dimensions, chunk_size, segy_headers = get_grid_plan(
+    trace_data_crc32c = None
+    segy_dimensions, chunk_size, segy_headers, *maybe_trace_data_crc32c = get_grid_plan(
         segy_file_kwargs=segy_file_kwargs,
         segy_file_info=segy_file_info,
         return_headers=True,
@@ -155,6 +157,9 @@ def _scan_for_headers(
         chunksize=full_chunk_size,
         grid_overrides=grid_overrides,
     )
+
+    if maybe_trace_data_crc32c:
+        trace_data_crc32c = maybe_trace_data_crc32c[0]
     if full_chunk_size != chunk_size:
         # TODO(Dmitriy): implement grid overrides
         # https://github.com/TGSAI/mdio-python/issues/585
@@ -162,7 +167,7 @@ def _scan_for_headers(
         # support for grid overrides is implemented
         err = "Support for changing full_chunk_size in grid overrides is not yet implemented"
         raise NotImplementedError(err)
-    return segy_dimensions, segy_headers
+    return segy_dimensions, segy_headers, trace_data_crc32c
 
 
 def _build_and_check_grid(
@@ -518,7 +523,7 @@ def segy_to_mdio(  # noqa PLR0913
     }
     segy_file_info = get_segy_file_info(segy_file_kwargs)
 
-    segy_dimensions, segy_headers = _scan_for_headers(
+    segy_dimensions, segy_headers, trace_data_crc32c = _scan_for_headers(
         segy_file_kwargs,
         segy_file_info,
         template=mdio_template,
@@ -587,3 +592,20 @@ def segy_to_mdio(  # noqa PLR0913
         dataset=xr_dataset,
         data_variable_name=default_variable_name,
     )
+
+    # Store the final CRC32C checksum in the Zarr store attributes only when calculated
+    if trace_data_crc32c is not None:
+        # The trace_data_crc32c is now the full file CRC32C from DistributedCRC32C
+        final_crc32c = trace_data_crc32c
+        from mdio.api.io import _normalize_storage_options  # noqa: PLC0415
+
+        storage_options = _normalize_storage_options(output_path)
+        zarr_group = zarr.open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
+        zarr_group.attrs.update(
+            {
+                "segy_input_crc32c": final_crc32c,  # Store as integer, not hex string
+                "crc32c_algorithm": "CRC32C",
+                "checksum_scope": "full_file",
+                "checksum_library": "google-crc32c",
+            }
+        )
