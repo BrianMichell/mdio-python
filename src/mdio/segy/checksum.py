@@ -15,24 +15,30 @@ and cost implications, especially for cloud storage.
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
 import os
-from typing import TYPE_CHECKING
-from typing import Any
-import numpy as np
-from segy import SegyFile
-from mdio.segy._raw_trace_wrapper import SegyFileRawTraceWrapper
-from math import ceil
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
+from math import ceil
+from typing import TYPE_CHECKING
+from typing import Any
+
+import numpy as np
+from psutil import cpu_count
+from segy import SegyFile
+from segy.arrays import HeaderArray
 from tqdm.auto import tqdm
 from upath import UPath
-from psutil import cpu_count
-import multiprocessing as mp
 
+from mdio.segy._raw_trace_wrapper import SegyFileRawTraceWrapper
 
-from segy.arrays import HeaderArray
 if TYPE_CHECKING:
     from mdio.segy._workers import SegyFileArguments
+
+    try:
+        from crc32c_dist_rs import DistributedCRC32C
+    except ImportError:
+        DistributedCRC32C = Any  # type: ignore[assignment,misc]
 
 default_cpus = cpu_count(logical=True)
 
@@ -58,7 +64,7 @@ except ImportError as e:
 
 
 def header_scan_worker(
-    segy_file_kwargs: "SegyFileArguments",
+    segy_file_kwargs: SegyFileArguments,
     trace_range: tuple[int, int],
     subset: list[str] | None = None,
 ) -> HeaderArray | tuple[HeaderArray, tuple[int, int, int]]:
@@ -103,7 +109,6 @@ def header_scan_worker(
     # (singleton) so we can concat and assign stuff later.
     trace_header = np.array(trace_header, dtype=new_dtype, ndmin=1)
 
-
     # Calculate checksum from the raw bytes ALREADY IN MEMORY (NO ADDITIONAL I/O!)
     raw_bytes = traces.trace_buffer_array.tobytes()
     partial_crc32c = calculate_bytes_crc32c(raw_bytes)
@@ -122,13 +127,13 @@ def header_scan_worker(
 
     return HeaderArray(trace_header), checksum_info
 
+
 def parse_headers(  # noqa: PLR0913
     segy_file_kwargs: SegyFileArguments,
     num_traces: int,
     subset: list[str] | None = None,
     block_size: int = 10000,
     progress_bar: bool = True,
-    calculate_checksum: bool = True,
 ) -> HeaderArray | tuple[HeaderArray, int]:
     """Read and parse given `byte_locations` from SEG-Y file.
 
@@ -200,9 +205,7 @@ def parse_headers(  # noqa: PLR0913
         )
 
         if progress_bar is True:
-            desc = (
-                "Scanning SEG-Y & calculating checksum"
-            )
+            desc = "Scanning SEG-Y & calculating checksum"
             lazy_work = tqdm(
                 iterable=lazy_work,
                 total=n_blocks,
@@ -214,6 +217,7 @@ def parse_headers(  # noqa: PLR0913
         results = list(lazy_work)
 
     return finalize_distributed_checksum(results, combiner)
+
 
 def is_checksum_available() -> bool:
     """Check if checksum libraries are available.
@@ -273,7 +277,7 @@ def calculate_bytes_crc32c(data: bytes) -> int:
     return int.from_bytes(crc.digest(), byteorder="big")
 
 
-def create_distributed_crc32c(initial_bytes: bytes, total_length: int) -> Any:
+def create_distributed_crc32c(initial_bytes: bytes, total_length: int) -> DistributedCRC32C:
     """Create a distributed CRC32C combiner instance.
 
     Args:
@@ -292,7 +296,7 @@ def create_distributed_crc32c(initial_bytes: bytes, total_length: int) -> Any:
 
 
 def finalize_distributed_checksum(
-    results: list[tuple[HeaderArray, tuple[int, int, int]]], combiner: Any
+    results: list[tuple[HeaderArray, tuple[int, int, int]]], combiner: DistributedCRC32C
 ) -> tuple[HeaderArray, int]:
     """Finalize a distributed CRC32C checksum from scan results.
 
@@ -308,8 +312,6 @@ def finalize_distributed_checksum(
         ImportError: If checksum libraries are not available.
     """
     require_checksum_libraries()
-
-    import numpy as np
 
     headers: list[HeaderArray] = []
     for result in results:
@@ -334,4 +336,3 @@ __all__ = [
     "create_distributed_crc32c",
     "finalize_distributed_checksum",
 ]
-

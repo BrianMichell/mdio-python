@@ -47,7 +47,7 @@ def get_expected_crc32c(segy_path: Path) -> int:
         CRC32C checksum as integer
     """
     # Import here to keep it test-only
-    import google_crc32c
+    import google_crc32c  # noqa: PLC0415
 
     crc = google_crc32c.Checksum()
 

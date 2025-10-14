@@ -11,10 +11,9 @@ import numpy as np
 from dask.array.core import normalize_chunks
 
 from mdio.core import Dimension
-from mdio.segy.geometry import GridOverrider
-
-from mdio.segy.checksum import should_calculate_checksum
 from mdio.segy.checksum import is_checksum_available
+from mdio.segy.checksum import should_calculate_checksum
+from mdio.segy.geometry import GridOverrider
 
 if TYPE_CHECKING:
     from numpy.typing import DTypeLike
@@ -61,10 +60,11 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     """
     calculate_checksum = False
     if should_calculate_checksum() and is_checksum_available():
-        from mdio.segy.checksum import parse_headers
+        from mdio.segy.checksum import parse_headers  # noqa: PLC0415
+
         calculate_checksum = True
     else:
-        from mdio.segy.parsers import parse_headers
+        from mdio.segy.parsers import parse_headers  # noqa: PLC0415
 
     if grid_overrides is None:
         grid_overrides = {}

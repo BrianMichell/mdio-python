@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 default_cpus = cpu_count(logical=True)
 
+
 def parse_headers(
     segy_file_kwargs: SegyFileArguments,
     num_traces: int,
