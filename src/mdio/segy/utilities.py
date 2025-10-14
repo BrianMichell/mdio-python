@@ -34,7 +34,6 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     template: AbstractDatasetTemplate,
     return_headers: bool = False,
     grid_overrides: dict[str, Any] | None = None,
-    calculate_checksum: bool = False,
 ) -> (
     tuple[list[Dimension], tuple[int, ...]]
     | tuple[list[Dimension], tuple[int, ...], HeaderArray]
@@ -60,8 +59,10 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     Returns:
         All index dimensions and chunksize, optionally with header values and/or checksum.
     """
+    calculate_checksum = False
     if should_calculate_checksum() and is_checksum_available():
         from mdio.segy.checksum import parse_headers
+        calculate_checksum = True
     else:
         from mdio.segy.parsers import parse_headers
 

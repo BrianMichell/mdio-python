@@ -142,7 +142,6 @@ def _scan_for_headers(
     segy_file_info: SegyFileInfo,
     template: AbstractDatasetTemplate,
     grid_overrides: dict[str, Any] | None = None,
-    calculate_checksum: bool = False,
 ) -> tuple[list[Dimension], SegyHeaderArray, int | None]:
     """Extract trace dimensions and index headers from the SEG-Y file.
 
@@ -158,10 +157,9 @@ def _scan_for_headers(
         template=template,
         chunksize=full_chunk_size,
         grid_overrides=grid_overrides,
-        calculate_checksum=calculate_checksum,
     )
 
-    if calculate_checksum:
+    if should_calculate_checksum():
         segy_dimensions, chunk_size, segy_headers, trace_data_crc32c = grid_plan_result
     else:
         segy_dimensions, chunk_size, segy_headers = grid_plan_result
@@ -529,16 +527,11 @@ def segy_to_mdio(  # noqa PLR0913
     }
     segy_file_info = get_segy_file_info(segy_file_kwargs)
 
-    # Check if checksum calculation should be performed
-    # This checks both the env var and library availability
-    calculate_checksum = should_calculate_checksum()
-
     segy_dimensions, segy_headers, trace_data_crc32c = _scan_for_headers(
         segy_file_kwargs,
         segy_file_info,
         template=mdio_template,
         grid_overrides=grid_overrides,
-        calculate_checksum=calculate_checksum,
     )
     grid = _build_and_check_grid(segy_dimensions, segy_file_info, segy_headers)
 
