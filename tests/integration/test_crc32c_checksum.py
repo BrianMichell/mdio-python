@@ -22,7 +22,7 @@ from mdio import segy_to_mdio
 from mdio.builder.template_registry import TemplateRegistry
 from mdio.segy._workers import info_worker
 from mdio.segy.checksum import is_checksum_available
-from mdio.segy.parsers import parse_headers
+from mdio.segy.checksum import parse_headers
 
 # Skip all tests in this module if checksum libraries are not available
 pytestmark = pytest.mark.skipif(
@@ -170,7 +170,6 @@ class TestCRC32CChecksum:
         _, mdio_crc = parse_headers(
             segy_file_kwargs=segy_file_kwargs,
             num_traces=segy_file_info.num_traces,
-            calculate_checksum=True,
         )
 
         assert mdio_crc == corrupted_crc, (

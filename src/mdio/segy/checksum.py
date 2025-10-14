@@ -21,10 +21,20 @@ from typing import Any
 import numpy as np
 from segy import SegyFile
 from mdio.segy._raw_trace_wrapper import SegyFileRawTraceWrapper
+from math import ceil
+from concurrent.futures import ProcessPoolExecutor
+from itertools import repeat
+from tqdm.auto import tqdm
+from upath import UPath
+from psutil import cpu_count
+import multiprocessing as mp
+
 
 from segy.arrays import HeaderArray
 if TYPE_CHECKING:
     from mdio.segy._workers import SegyFileArguments
+
+default_cpus = cpu_count(logical=True)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +122,98 @@ def header_scan_worker(
 
     return HeaderArray(trace_header), checksum_info
 
+def parse_headers(  # noqa: PLR0913
+    segy_file_kwargs: SegyFileArguments,
+    num_traces: int,
+    subset: list[str] | None = None,
+    block_size: int = 10000,
+    progress_bar: bool = True,
+    calculate_checksum: bool = True,
+) -> HeaderArray | tuple[HeaderArray, int]:
+    """Read and parse given `byte_locations` from SEG-Y file.
+
+    Args:
+        segy_file_kwargs: SEG-Y file arguments.
+        num_traces: Total number of traces in the SEG-Y file.
+        subset: List of header names to filter and keep.
+        block_size: Number of traces to read for each block.
+        progress_bar: Enable or disable progress bar. Default is True.
+        calculate_checksum: If True, also calculate CRC32C checksum for all trace data.
+
+    Returns:
+        HeaderArray if calculate_checksum is False.
+        Tuple of (HeaderArray, combined_crc32c) if calculate_checksum is True.
+    """
+    # Dynamically import the appropriate header_scan_worker based on checksum requirement
+    # if should_calculate_checksum() and is_checksum_available():
+    #     from mdio.segy.checksum import header_scan_worker
+    # else:
+    #     from mdio.segy._workers import header_scan_worker
+
+    # Type hint for the dynamically imported function
+    # header_scan_worker: Any
+    # Initialize combiner only if checksum calculation is needed and available
+    # combiner: Any = None
+    # Use UPath for cloud/filesystem agnostic reading
+    path = UPath(segy_file_kwargs["url"])
+    raw_bytes = path.fs.read_block(
+        fn=str(path),
+        offset=0,
+        length=3600,
+    )
+
+    # Calculate trace size to determine total data length
+    # We need to open the file briefly to get the spec
+    sf = SegyFile(**segy_file_kwargs)
+    trace_header_size = sf.spec.trace.header.itemsize
+    sample_size = 4  # This will always be a 4-byte float
+    num_samples = len(sf.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+
+    # Total length is header (3600) + trace data
+    total_len = 3600 + num_traces * trace_size
+    combiner = create_distributed_crc32c(raw_bytes, total_len)
+
+    trace_count = num_traces
+    n_blocks = int(ceil(trace_count / block_size))
+
+    trace_ranges = []
+    for idx in range(n_blocks):
+        start, stop = idx * block_size, (idx + 1) * block_size
+        stop = min(stop, trace_count)
+
+        trace_ranges.append((start, stop))
+
+    num_cpus = int(os.getenv("MDIO__IMPORT__CPU_COUNT", default_cpus))
+    num_workers = min(n_blocks, num_cpus)
+
+    tqdm_kw = {"unit": "block", "dynamic_ncols": True}
+    # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
+    # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
+    context = mp.get_context("spawn")
+    with ProcessPoolExecutor(num_workers, mp_context=context) as executor:
+        lazy_work = executor.map(
+            header_scan_worker,
+            repeat(segy_file_kwargs),
+            trace_ranges,
+            repeat(subset),
+        )
+
+        if progress_bar is True:
+            desc = (
+                "Scanning SEG-Y & calculating checksum"
+            )
+            lazy_work = tqdm(
+                iterable=lazy_work,
+                total=n_blocks,
+                desc=desc,
+                **tqdm_kw,
+            )
+
+        # This executes the lazy work.
+        results = list(lazy_work)
+
+    return finalize_distributed_checksum(results, combiner)
 
 def is_checksum_available() -> bool:
     """Check if checksum libraries are available.

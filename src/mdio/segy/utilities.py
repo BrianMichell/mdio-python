@@ -14,6 +14,9 @@ from mdio.core import Dimension
 from mdio.segy.geometry import GridOverrider
 from mdio.segy.parsers import parse_headers
 
+from mdio.segy.checksum import should_calculate_checksum
+from mdio.segy.checksum import is_checksum_available
+
 if TYPE_CHECKING:
     from numpy.typing import DTypeLike
     from segy.arrays import HeaderArray
@@ -58,6 +61,11 @@ def get_grid_plan(  # noqa:  C901, PLR0913
     Returns:
         All index dimensions and chunksize, optionally with header values and/or checksum.
     """
+    if should_calculate_checksum() and is_checksum_available():
+        from mdio.segy.checksum import parse_headers
+    else:
+        from mdio.segy.parsers import parse_headers
+
     if grid_overrides is None:
         grid_overrides = {}
 
@@ -68,7 +76,6 @@ def get_grid_plan(  # noqa:  C901, PLR0913
         segy_file_kwargs=segy_file_kwargs,
         num_traces=segy_file_info.num_traces,
         subset=horizontal_coordinates,
-        calculate_checksum=calculate_checksum,
     )
 
     # Unpack result based on whether checksum was calculated
