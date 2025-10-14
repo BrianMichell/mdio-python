@@ -530,7 +530,7 @@ def segy_to_mdio(  # noqa PLR0913
     segy_file_info = get_segy_file_info(segy_file_kwargs)
 
     # Only calculate CRC32C when raw headers are enabled
-    calculate_checksum = os.getenv("MDIO__IMPORT__RAW_HEADERS") in ("1", "true", "yes", "on")
+    calculate_checksum = os.getenv("MDIO__IMPORT__DO_CRC32C") in ("1", "true", "yes", "on")
 
     segy_dimensions, segy_headers, trace_data_crc32c = _scan_for_headers(
         segy_file_kwargs,

@@ -71,6 +71,7 @@ class TestCRC32CChecksum:
         """Test that CRC32C checksums are correctly stored for synthetic files from masked export tests."""
         # Enable checksum calculation via environment variable
         monkeypatch.setenv("MDIO__IMPORT__RAW_HEADERS", "true")
+        monkeypatch.setenv("MDIO__IMPORT__DO_CRC32C", "true")
 
         grid_conf, segy_factory_conf, segy_to_mdio_conf, _ = test_conf
 
