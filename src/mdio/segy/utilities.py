@@ -12,7 +12,6 @@ from dask.array.core import normalize_chunks
 
 from mdio.core import Dimension
 from mdio.segy.geometry import GridOverrider
-from mdio.segy.parsers import parse_headers
 
 from mdio.segy.checksum import should_calculate_checksum
 from mdio.segy.checksum import is_checksum_available

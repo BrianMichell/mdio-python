@@ -8,19 +8,10 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 from math import ceil
 from typing import TYPE_CHECKING
-from typing import Any
 
 import numpy as np
 from psutil import cpu_count
-from segy import SegyFile
 from tqdm.auto import tqdm
-from upath import UPath
-
-# All imports from the `checksum` module are slated to be removed in the future
-from mdio.segy.checksum import create_distributed_crc32c
-from mdio.segy.checksum import finalize_distributed_checksum
-from mdio.segy.checksum import is_checksum_available
-from mdio.segy.checksum import should_calculate_checksum
 
 from mdio.segy._workers import header_scan_worker
 
