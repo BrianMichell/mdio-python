@@ -13,10 +13,8 @@ from segy.config import SegyFileSettings
 from segy.config import SegyHeaderOverrides
 from segy.standards.codes import MeasurementSystem as SegyMeasurementSystem
 from segy.standards.fields import binary as binary_header_fields
-from zarr import open_group as zarr_open_group
 
 from mdio.api.io import _normalize_path
-from mdio.api.io import _normalize_storage_options
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.chunk_grid import RegularChunkGrid
 from mdio.builder.schemas.chunk_grid import RegularChunkShape
@@ -587,7 +585,6 @@ def segy_to_mdio(  # noqa PLR0913
     default_variable_name = mdio_template.default_variable_name
     # This is an memory-expensive and time-consuming read-write operation
     # performed in chunks to save the memory
-    # NOTE: trace_data_crc32c was already calculated during header scanning phase
     blocked_io.to_zarr(
         segy_file_kwargs=segy_file_kwargs,
         output_path=output_path,
@@ -600,9 +597,10 @@ def segy_to_mdio(  # noqa PLR0913
     if trace_data_crc32c is not None:
         # The trace_data_crc32c is now the full file CRC32C from DistributedCRC32C
         final_crc32c = trace_data_crc32c
+        from mdio.api.io import _normalize_storage_options  # noqa: PLC0415
 
         storage_options = _normalize_storage_options(output_path)
-        zarr_group = zarr_open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
+        zarr_group = zarr.open_group(output_path.as_posix(), mode="a", storage_options=storage_options)
         zarr_group.attrs.update(
             {
                 "segy_input_crc32c": final_crc32c,  # Store as integer, not hex string
