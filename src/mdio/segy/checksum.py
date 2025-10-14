@@ -68,7 +68,7 @@ def header_scan_worker(
     trace_range: tuple[int, int],
     subset: list[str] | None = None,
 ) -> HeaderArray | tuple[HeaderArray, tuple[int, int, int]]:
-    """Header scan worker with optional checksum calculation.
+    """Header scan worker that calculates CRC32C checksum.
 
     If SegyFile is not open, it can either accept a path string or a handle that was opened in
     a different context manager.
@@ -77,11 +77,9 @@ def header_scan_worker(
         segy_file_kwargs: Arguments to open SegyFile instance.
         trace_range: Tuple consisting of the trace ranges to read.
         subset: List of header names to filter and keep.
-        calculate_checksum: If True, also calculate CRC32C for this trace range.
 
     Returns:
-        HeaderArray if calculate_checksum is False, otherwise tuple of (HeaderArray, checksum_info)
-        where checksum_info is (byte_offset, crc32c, byte_length).
+        Tuple of (HeaderArray, checksum_info) where checksum_info is (byte_offset, crc32c, byte_length).
     """
     print("Using header_scan_worker from checksum.py")
     segy_file = SegyFile(**segy_file_kwargs)
@@ -135,7 +133,7 @@ def parse_headers(  # noqa: PLR0913
     block_size: int = 10000,
     progress_bar: bool = True,
 ) -> HeaderArray | tuple[HeaderArray, int]:
-    """Read and parse given `byte_locations` from SEG-Y file.
+    """Read and parse SEG-Y file headers and calculate CRC32C checksum.
 
     Args:
         segy_file_kwargs: SEG-Y file arguments.
@@ -143,11 +141,9 @@ def parse_headers(  # noqa: PLR0913
         subset: List of header names to filter and keep.
         block_size: Number of traces to read for each block.
         progress_bar: Enable or disable progress bar. Default is True.
-        calculate_checksum: If True, also calculate CRC32C checksum for all trace data.
 
     Returns:
-        HeaderArray if calculate_checksum is False.
-        Tuple of (HeaderArray, combined_crc32c) if calculate_checksum is True.
+        Tuple of (HeaderArray, combined_crc32c) with the CRC32C checksum.
     """
     # Dynamically import the appropriate header_scan_worker based on checksum requirement
     # if should_calculate_checksum() and is_checksum_available():
@@ -267,9 +263,6 @@ def calculate_bytes_crc32c(data: bytes) -> int:
 
     Returns:
         CRC32C checksum as integer.
-
-    Raises:
-        ImportError: If checksum libraries are not available.
     """
     require_checksum_libraries()
 
@@ -286,9 +279,6 @@ def create_distributed_crc32c(initial_bytes: bytes, total_length: int) -> Distri
 
     Returns:
         DistributedCRC32C instance.
-
-    Raises:
-        ImportError: If checksum libraries are not available.
     """
     require_checksum_libraries()
 
@@ -309,7 +299,6 @@ def finalize_distributed_checksum(
 
     Raises:
         ValueError: If checksum finalization fails.
-        ImportError: If checksum libraries are not available.
     """
     require_checksum_libraries()
 

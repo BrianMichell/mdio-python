@@ -53,7 +53,6 @@ def get_grid_plan(  # noqa:  C901, PLR0913
         template: MDIO template where coordinate names and domain will be taken.
         return_headers: Option to return parsed headers with `Dimension` objects. Default is False.
         grid_overrides: Option to add grid overrides. See main documentation.
-        calculate_checksum: Option to calculate CRC32C checksum during scanning. Default is False.
 
     Returns:
         All index dimensions and chunksize, optionally with header values and/or checksum.
