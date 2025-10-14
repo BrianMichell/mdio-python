@@ -6,7 +6,6 @@ when ingesting SEG-Y files. Uses existing synthetic test data for consistency.
 
 from pathlib import Path
 
-import google_crc32c
 import pytest
 import zarr
 from tests.integration.test_segy_import_export_masked import COCA_3D_CONF
@@ -22,7 +21,13 @@ from tests.integration.test_segy_import_export_masked import mock_nd_segy
 from mdio import segy_to_mdio
 from mdio.builder.template_registry import TemplateRegistry
 from mdio.segy._workers import info_worker
+from mdio.segy.checksum import is_checksum_available
 from mdio.segy.parsers import parse_headers
+
+# Skip all tests in this module if checksum libraries are not available
+pytestmark = pytest.mark.skipif(
+    not is_checksum_available(), reason="CRC32C checksum libraries (google-crc32c, crc32c_dist_rs) not installed"
+)
 
 
 def get_expected_crc32c(segy_path: Path) -> int:
@@ -31,12 +36,19 @@ def get_expected_crc32c(segy_path: Path) -> int:
     This calculates CRC32C over the entire file (headers + trace data),
     matching how MDIO calculates the checksum.
 
+    NOTE: This is TEST-ONLY code. Never use this in production as it reads
+    the entire file into memory which has significant performance and cost
+    penalties, especially for cloud storage.
+
     Args:
         segy_path: Path to the SEG-Y file
 
     Returns:
         CRC32C checksum as integer
     """
+    # Import here to keep it test-only
+    import google_crc32c
+
     crc = google_crc32c.Checksum()
 
     with segy_path.open("rb") as f:

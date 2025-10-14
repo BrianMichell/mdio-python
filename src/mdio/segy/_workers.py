@@ -76,10 +76,16 @@ def header_scan_worker(
     if not calculate_checksum:
         return HeaderArray(trace_header)  # wrap back so we can use aliases
 
+    # Verify checksum libraries are available (should have been checked earlier)
+    if not is_checksum_available():
+        logger.warning("Checksum calculation requested but libraries not available. Skipping checksum.")
+        # Return headers without checksum info - this should not happen in practice
+        # as the caller should check availability first
+        return HeaderArray(trace_header)
+
     # Calculate checksum from the raw bytes ALREADY IN MEMORY (NO ADDITIONAL I/O!)
     raw_bytes = traces.trace_buffer_array.tobytes()
-    crc = google_crc32c.Checksum(raw_bytes)
-    partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
+    partial_crc32c = calculate_bytes_crc32c(raw_bytes)
 
     # Calculate byte offset and length
     trace_header_size = segy_file.spec.trace.header.itemsize

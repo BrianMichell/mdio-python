@@ -8,15 +8,18 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 from math import ceil
 from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
-from crc32c_dist_rs import DistributedCRC32C
 from psutil import cpu_count
 from segy import SegyFile
 from tqdm.auto import tqdm
 from upath import UPath
 
 from mdio.segy._workers import header_scan_worker
+from mdio.segy.checksum import create_distributed_crc32c
+from mdio.segy.checksum import finalize_distributed_checksum
+from mdio.segy.checksum import is_checksum_available
 
 if TYPE_CHECKING:
     from segy.arrays import HeaderArray
@@ -24,24 +27,6 @@ if TYPE_CHECKING:
     from mdio.segy.file import SegyFileArguments
 
 default_cpus = cpu_count(logical=True)
-
-
-def _finalize_checksum(
-    results: list[tuple[HeaderArray, tuple[int, int, int]]], combiner: DistributedCRC32C
-) -> tuple[HeaderArray, int]:
-    """Finalize the checksum from the results of the header scan."""
-    headers: list[HeaderArray] = []
-    for result in results:
-        headers.append(result[0])
-        byte_offset, partial_crc, byte_length = result[1]
-        combiner.add_fragment(byte_offset, byte_length, partial_crc)
-    combined_crc = combiner.try_finalize()
-    if combined_crc is None:
-        msg = "Failed to finalize CRC32C - file may not be fully covered"
-        raise ValueError(msg)
-
-    # Merge headers and return with checksum
-    return np.concatenate(headers), combined_crc
 
 
 def parse_headers(  # noqa: PLR0913
@@ -66,25 +51,32 @@ def parse_headers(  # noqa: PLR0913
         HeaderArray if calculate_checksum is False.
         Tuple of (HeaderArray, combined_crc32c) if calculate_checksum is True.
     """
-    # Use UPath for cloud/filesystem agnostic reading
-    path = UPath(segy_file_kwargs["url"])
-    raw_bytes = path.fs.read_block(
-        fn=str(path),
-        offset=0,
-        length=3600,
-    )
+    # Initialize combiner only if checksum calculation is needed and available
+    combiner: Any = None
+    if calculate_checksum:
+        if not is_checksum_available():
+            # Checksum was requested but libraries not available - disable it
+            calculate_checksum = False
+        else:
+            # Use UPath for cloud/filesystem agnostic reading
+            path = UPath(segy_file_kwargs["url"])
+            raw_bytes = path.fs.read_block(
+                fn=str(path),
+                offset=0,
+                length=3600,
+            )
 
-    # Calculate trace size to determine total data length
-    # We need to open the file briefly to get the spec
-    sf = SegyFile(**segy_file_kwargs)
-    trace_header_size = sf.spec.trace.header.itemsize
-    sample_size = 4  # This will always be a 4-byte float
-    num_samples = len(sf.sample_labels)
-    trace_size = trace_header_size + (num_samples * sample_size)
+            # Calculate trace size to determine total data length
+            # We need to open the file briefly to get the spec
+            sf = SegyFile(**segy_file_kwargs)
+            trace_header_size = sf.spec.trace.header.itemsize
+            sample_size = 4  # This will always be a 4-byte float
+            num_samples = len(sf.sample_labels)
+            trace_size = trace_header_size + (num_samples * sample_size)
 
-    # Total length is header (3600) + trace data
-    total_len = 3600 + num_traces * trace_size
-    combiner = DistributedCRC32C(raw_bytes, total_len)
+            # Total length is header (3600) + trace data
+            total_len = 3600 + num_traces * trace_size
+            combiner = create_distributed_crc32c(raw_bytes, total_len)
 
     trace_count = num_traces
     n_blocks = int(ceil(trace_count / block_size))
@@ -132,4 +124,4 @@ def parse_headers(  # noqa: PLR0913
         # Merge headers and return
         return np.concatenate(results)
 
-    return _finalize_checksum(results, combiner)
+    return finalize_distributed_checksum(results, combiner)
