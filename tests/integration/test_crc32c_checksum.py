@@ -20,9 +20,9 @@ from tests.integration.test_segy_import_export_masked import mock_nd_segy
 
 from mdio import segy_to_mdio
 from mdio.builder.template_registry import TemplateRegistry
-from mdio.segy._workers import info_worker
 from mdio.segy.checksum import is_checksum_available
 from mdio.segy.checksum import parse_headers
+from mdio.segy.file import get_segy_file_info
 
 # Skip all tests in this module if checksum libraries are not available
 pytestmark = pytest.mark.skipif(
@@ -166,7 +166,7 @@ class TestCRC32CChecksum:
             "header_overrides": None,
         }
 
-        segy_file_info = info_worker(segy_file_kwargs)
+        segy_file_info = get_segy_file_info(segy_file_kwargs)
         _, mdio_crc = parse_headers(
             segy_file_kwargs=segy_file_kwargs,
             num_traces=segy_file_info.num_traces,
