@@ -18,9 +18,13 @@ import logging
 import os
 from typing import TYPE_CHECKING
 from typing import Any
+import numpy as np
+from segy import SegyFile
+from mdio.segy._raw_trace_wrapper import SegyFileRawTraceWrapper
 
+from segy.arrays import HeaderArray
 if TYPE_CHECKING:
-    from segy.arrays import HeaderArray
+    from mdio.segy._workers import SegyFileArguments
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,72 @@ except ImportError as e:
     # Define placeholder types for type checking
     google_crc32c = None  # type: ignore[assignment]
     DistributedCRC32C = None  # type: ignore[assignment,misc]
+
+
+def header_scan_worker(
+    segy_file_kwargs: "SegyFileArguments",
+    trace_range: tuple[int, int],
+    subset: list[str] | None = None,
+) -> HeaderArray | tuple[HeaderArray, tuple[int, int, int]]:
+    """Header scan worker with optional checksum calculation.
+
+    If SegyFile is not open, it can either accept a path string or a handle that was opened in
+    a different context manager.
+
+    Args:
+        segy_file_kwargs: Arguments to open SegyFile instance.
+        trace_range: Tuple consisting of the trace ranges to read.
+        subset: List of header names to filter and keep.
+        calculate_checksum: If True, also calculate CRC32C for this trace range.
+
+    Returns:
+        HeaderArray if calculate_checksum is False, otherwise tuple of (HeaderArray, checksum_info)
+        where checksum_info is (byte_offset, crc32c, byte_length).
+    """
+    print("Using header_scan_worker from checksum.py")
+    segy_file = SegyFile(**segy_file_kwargs)
+
+    start_trace, end_trace = trace_range
+    trace_indices = list(range(start_trace, end_trace))
+
+    # Read full trace data (header + samples) ONCE using the raw trace wrapper
+    # This avoids duplicate I/O - we get both headers and raw bytes in a single read
+    traces = SegyFileRawTraceWrapper(segy_file, trace_indices)
+
+    # Extract headers from the data we already read (no additional I/O)
+    trace_header = traces.header
+
+    if subset is not None:
+        # struct field selection needs a list, not a tuple; a subset is a tuple from the template.
+        trace_header = trace_header[list(subset)]
+
+    # Get non-void fields from dtype and copy to new array for memory efficiency
+    fields = trace_header.dtype.fields
+    non_void_fields = [(name, dtype) for name, (dtype, _) in fields.items()]
+    new_dtype = np.dtype(non_void_fields)
+
+    # Copy to non-padded memory, ndmin is to handle the case where there is 1 trace in block
+    # (singleton) so we can concat and assign stuff later.
+    trace_header = np.array(trace_header, dtype=new_dtype, ndmin=1)
+
+
+    # Calculate checksum from the raw bytes ALREADY IN MEMORY (NO ADDITIONAL I/O!)
+    raw_bytes = traces.trace_buffer_array.tobytes()
+    partial_crc32c = calculate_bytes_crc32c(raw_bytes)
+
+    # Calculate byte offset and length
+    trace_header_size = segy_file.spec.trace.header.itemsize
+    # sample_size = segy_file.spec.trace.sample.itemsize
+    sample_size = 4  # This will always be a 4-byte float
+    num_samples = len(segy_file.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+
+    byte_offset = 3600 + start_trace * trace_size
+    byte_length = len(raw_bytes)
+
+    checksum_info = (byte_offset, partial_crc32c, byte_length)
+
+    return HeaderArray(trace_header), checksum_info
 
 
 def is_checksum_available() -> bool:

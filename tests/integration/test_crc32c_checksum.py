@@ -126,6 +126,7 @@ class TestCRC32CChecksum:
         """Test that checksums detect data corruption using synthetic streamer data."""
         # Enable checksum calculation via environment variable
         monkeypatch.setenv("MDIO__IMPORT__RAW_HEADERS", "true")
+        monkeypatch.setenv("MDIO__IMPORT__DO_CRC32C", "true")
 
         # Use streamer configuration for this test
         test_conf = STREAMER_3D_CONF

@@ -692,7 +692,32 @@ wheels = [
 [[package]]
 name = "crc32c-dist-rs"
 version = "0.1.4"
+source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version < '3.12'",
+]
+wheels = [
+    { filename = "crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:6e4dfd38632807cc52e0fda7439562cf8ab5457edc60682daaf8abe56e9c8b88" },
+]
+
+[[package]]
+name = "crc32c-dist-rs"
+version = "0.1.4"
+source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version == '3.12.*'",
+]
+wheels = [
+    { filename = "crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:89839bd9e826ffc128d797b746749332d11455b99194f5ee23018adcb37c568a" },
+]
+
+[[package]]
+name = "crc32c-dist-rs"
+version = "0.1.4"
 source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+]
 wheels = [
     { filename = "crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:fd0b524b79664c2daa1a3fd8fa9beae779079047f8dddd719c60eae9fbbc1d7e" },
 ]
@@ -1866,8 +1891,12 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "click-params" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" }, marker = "python_full_version < '3.12'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" }, marker = "python_full_version == '3.12.*'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }, marker = "python_full_version >= '3.13'" },
     { name = "dask" },
     { name = "fsspec" },
+    { name = "google-crc32c" },
     { name = "pint" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -1881,7 +1910,9 @@ dependencies = [
 
 [package.optional-dependencies]
 checksum = [
-    { name = "crc32c-dist-rs" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" }, marker = "python_full_version < '3.12'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" }, marker = "python_full_version == '3.12.*'" },
+    { name = "crc32c-dist-rs", version = "0.1.4", source = { path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" }, marker = "python_full_version >= '3.13'" },
     { name = "google-crc32c" },
 ]
 cloud = [
@@ -1933,11 +1964,19 @@ requires-dist = [
     { name = "bokeh", marker = "extra == 'distributed'", specifier = ">=3.8.0" },
     { name = "click", specifier = ">=8.3.0" },
     { name = "click-params", specifier = ">=0.5.0" },
-    { name = "crc32c-dist-rs", marker = "extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version < '3.11' or python_full_version >= '3.14'" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.11.*'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.11.*' and extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp311-cp311-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "(python_full_version < '3.11' and extra == 'checksum') or (python_full_version >= '3.14' and extra == 'checksum')" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.12.*'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.12.*' and extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp312-cp312-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.13.*'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" },
+    { name = "crc32c-dist-rs", marker = "python_full_version == '3.13.*' and extra == 'checksum'", path = "../../crc32c_dist_rs/target/wheels/crc32c_dist_rs-0.1.4-cp313-cp313-manylinux_2_34_x86_64.whl" },
     { name = "dask", specifier = ">=2025.9.1" },
     { name = "distributed", marker = "extra == 'distributed'", specifier = ">=2025.9.1" },
     { name = "fsspec", specifier = ">=2025.9.0" },
     { name = "gcsfs", marker = "extra == 'cloud'", specifier = ">=2025.9.0" },
+    { name = "google-crc32c", specifier = ">=1.5.0" },
     { name = "google-crc32c", marker = "extra == 'checksum'", specifier = ">=1.5.0" },
     { name = "numba", marker = "extra == 'performance'", specifier = ">=0.60.0" },
     { name = "pint", specifier = ">=0.25.0" },
