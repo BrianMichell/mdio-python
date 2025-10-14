@@ -81,7 +81,6 @@ def header_scan_worker(
     Returns:
         Tuple of (HeaderArray, checksum_info) where checksum_info is (byte_offset, crc32c, byte_length).
     """
-    print("Using header_scan_worker from checksum.py")
     segy_file = SegyFile(**segy_file_kwargs)
 
     start_trace, end_trace = trace_range
