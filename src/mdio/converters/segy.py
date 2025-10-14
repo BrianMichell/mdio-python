@@ -150,7 +150,8 @@ def _scan_for_headers(
     Optionally calculates CRC32C checksum for all trace data during scanning.
     """
     full_chunk_size = template.full_chunk_size
-    grid_plan_result = get_grid_plan(
+    trace_data_crc32c = None
+    segy_dimensions, chunk_size, segy_headers, *maybe_trace_data_crc32c = get_grid_plan(
         segy_file_kwargs=segy_file_kwargs,
         segy_file_info=segy_file_info,
         return_headers=True,
@@ -159,11 +160,8 @@ def _scan_for_headers(
         grid_overrides=grid_overrides,
     )
 
-    if should_calculate_checksum():
-        segy_dimensions, chunk_size, segy_headers, trace_data_crc32c = grid_plan_result
-    else:
-        segy_dimensions, chunk_size, segy_headers = grid_plan_result
-        trace_data_crc32c = None
+    if maybe_trace_data_crc32c:
+        trace_data_crc32c = maybe_trace_data_crc32c[0]
     if full_chunk_size != chunk_size:
         # TODO(Dmitriy): implement grid overrides
         # https://github.com/TGSAI/mdio-python/issues/585
