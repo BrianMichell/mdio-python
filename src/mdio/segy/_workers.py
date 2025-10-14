@@ -32,8 +32,9 @@ def header_scan_worker(
     segy_file_kwargs: SegyFileArguments,
     trace_range: tuple[int, int],
     subset: list[str] | None = None,
-) -> HeaderArray:
-    """Header scan worker.
+    calculate_checksum: bool = False,
+) -> HeaderArray | tuple[HeaderArray, tuple[int, int, int]]:
+    """Header scan worker with optional checksum calculation.
 
     If SegyFile is not open, it can either accept a path string or a handle that was opened in
     a different context manager.
@@ -42,9 +43,11 @@ def header_scan_worker(
         segy_file_kwargs: Arguments to open SegyFile instance.
         trace_range: Tuple consisting of the trace ranges to read.
         subset: List of header names to filter and keep.
+        calculate_checksum: If True, also calculate CRC32C for this trace range.
 
     Returns:
-        HeaderArray parsed from SEG-Y library.
+        HeaderArray if calculate_checksum is False, otherwise tuple of (HeaderArray, checksum_info)
+        where checksum_info is (byte_offset, crc32c, byte_length).
     """
     segy_file = SegyFileWrapper(**segy_file_kwargs)
 
@@ -70,7 +73,27 @@ def header_scan_worker(
     # (singleton) so we can concat and assign stuff later.
     trace_header = np.array(trace_header, dtype=new_dtype, ndmin=1)
 
-    return HeaderArray(trace_header)  # wrap back so we can use aliases
+    if not calculate_checksum:
+        return HeaderArray(trace_header)  # wrap back so we can use aliases
+
+    # Calculate checksum from the raw bytes ALREADY IN MEMORY (NO ADDITIONAL I/O!)
+    raw_bytes = traces.trace_buffer_array.tobytes()
+    crc = google_crc32c.Checksum(raw_bytes)
+    partial_crc32c = int.from_bytes(crc.digest(), byteorder="big")
+
+    # Calculate byte offset and length
+    trace_header_size = segy_file.spec.trace.header.itemsize
+    # sample_size = segy_file.spec.trace.sample.itemsize
+    sample_size = 4  # This will always be a 4-byte float
+    num_samples = len(segy_file.sample_labels)
+    trace_size = trace_header_size + (num_samples * sample_size)
+
+    byte_offset = 3600 + start_trace * trace_size
+    byte_length = len(raw_bytes)
+
+    checksum_info = (byte_offset, partial_crc32c, byte_length)
+
+    return HeaderArray(trace_header), checksum_info
 
 
 def trace_worker(  # noqa: PLR0913
