@@ -1,6 +1,6 @@
 [project]
 name = "multidimio"
-version = "1.0.7"
+version = "1.0.8"
 description = "Cloud-native, scalable, and user-friendly multi dimensional energy data!"
 authors = [{ name = "Altay Sansal", email = "altay.sansal@tgs.com" }]
 requires-python = ">=3.11,<3.14"
@@ -72,6 +72,7 @@ docs = [
     "sphinx-click>=6.1.0",
     "sphinx-copybutton>=0.5.2",
     "sphinx-design>=0.6.1",
+    "ipywidgets>=8.1.7",
 ]
 
 [tool.uv]
@@ -181,7 +182,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [tool.bumpversion]
-current_version = "1.0.7"
+current_version = "1.0.8"
 allow_dirty = true
 commit = false
 tag = false
