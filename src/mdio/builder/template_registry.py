@@ -26,8 +26,8 @@ from mdio.builder.templates.seismic_2d_prestack_shot import Seismic2DPreStackSho
 from mdio.builder.templates.seismic_3d_poststack import Seismic3DPostStackTemplate
 from mdio.builder.templates.seismic_3d_prestack_cdp import Seismic3DPreStackCDPTemplate
 from mdio.builder.templates.seismic_3d_prestack_coca import Seismic3DPreStackCocaTemplate
+from mdio.builder.templates.seismic_3d_prestack_field_records import SeismicPreStackTemplate
 from mdio.builder.templates.seismic_3d_prestack_shot import Seismic3DPreStackShotTemplate
-from mdio.builder.templates.seismic_prestack import SeismicPreStackTemplate
 
 if TYPE_CHECKING:
     from mdio.builder.templates.base import AbstractDatasetTemplate
