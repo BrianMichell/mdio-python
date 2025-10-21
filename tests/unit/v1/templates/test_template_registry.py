@@ -31,7 +31,7 @@ EXPECTED_DEFAULT_TEMPLATE_NAMES = [
     "PreStackCdpAngleGathers3DDepth",
     "PreStackCocaGathers3DTime",
     "PreStackCocaGathers3DDepth",
-    "PreStackFieldRecords3DTime",
+    "PreStackStreamerFieldRecords3DTime",
     "PreStackShotGathers2DTime",
     "PreStackShotGathers3DTime",
 ]
