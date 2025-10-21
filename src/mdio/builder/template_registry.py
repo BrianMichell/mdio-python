@@ -26,7 +26,7 @@ from mdio.builder.templates.seismic_2d_prestack_shot import Seismic2DPreStackSho
 from mdio.builder.templates.seismic_3d_poststack import Seismic3DPostStackTemplate
 from mdio.builder.templates.seismic_3d_prestack_cdp import Seismic3DPreStackCDPTemplate
 from mdio.builder.templates.seismic_3d_prestack_coca import Seismic3DPreStackCocaTemplate
-from mdio.builder.templates.seismic_3d_prestack_field_records import SeismicPreStackTemplate
+from mdio.builder.templates.seismic_3d_prestack_field_records import Seismic3DPreStackFieldRecordsTemplate
 from mdio.builder.templates.seismic_3d_prestack_shot import Seismic3DPreStackShotTemplate
 
 if TYPE_CHECKING:
@@ -134,7 +134,7 @@ class TemplateRegistry:
         self.register(Seismic3DPreStackCocaTemplate("depth"))
 
         # Field (shot) data
-        self.register(SeismicPreStackTemplate("time"))
+        self.register(Seismic3DPreStackFieldRecordsTemplate("time"))
         self.register(Seismic2DPreStackShotTemplate("time"))
         self.register(Seismic3DPreStackShotTemplate("time"))
 
