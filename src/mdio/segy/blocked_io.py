@@ -8,6 +8,7 @@ from concurrent.futures import as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import mdio_cpp
 import numpy as np
 import zarr
 from dask.array import Array
@@ -93,9 +94,15 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     )
 
     # Get array handles from the opened group
-    data_array = zarr_group[data_variable_name]
-    header_array = zarr_group.get("headers")
-    raw_header_array = zarr_group.get("raw_headers")
+    # data_array = zarr_group[data_variable_name]
+    # header_array = zarr_group.get("headers")
+    # raw_header_array = zarr_group.get("raw_headers")
+    ds = mdio_cpp.Dataset.open(output_path.as_posix(), open_mode="open")
+
+    print(ds)
+    # print(ds.get_variable("amplitude"))
+    # print(ds.get_variable("headers"))
+    # print(ds.get_variable("raw_headers"))
 
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
@@ -117,9 +124,13 @@ def to_zarr(  # noqa: PLR0913, PLR0915
             future = executor.submit(
                 trace_worker,
                 segy_file,
-                data_array,
-                header_array,
-                raw_header_array,
+                # data_array,
+                # header_array,
+                # raw_header_array,
+                # ds.get_variable(data_variable_name),
+                # ds.get_variable("headers"),
+                # ds.get_variable("raw_headers"),
+                ds,
                 region,
                 grid_map,
             )

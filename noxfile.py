@@ -26,6 +26,62 @@ nox.needs_version = ">=2025.2.9"
 nox.options.default_venv_backend = "uv"
 nox.options.sessions = ("pre-commit", "safety", "mypy", "tests", "typeguard", "xdoctest", "docs-build")
 
+# =============================================================================
+# === CUSTOM VENV HACK ========================================================
+# =============================================================================
+
+# Set this to your pre-existing environment:
+CUSTOM_VENV = Path("/home/ubuntu/source/mdio-python/.system")
+
+from nox.virtualenv import VirtualEnv
+
+
+class ReuseExistingVenv(VirtualEnv):
+    """A backend that just points to a pre-existing virtualenv."""
+
+    def __init__(self, location: str):
+        super().__init__(
+            interpreter=None,  # do not pick an interpreter
+            venv_dir=location,
+            reuse_existing=True,
+        )
+
+    def create(self):
+        """Override creation: do nothing."""
+        return
+
+
+@session(name="custom-tests", venv_backend="none")
+def custom_tests(session: Session) -> None:
+    """
+    Run pytest inside a pre-existing virtualenv.
+    Usage:
+        nox -s custom-tests
+        nox -s custom-tests -- tests/unit
+    """
+    CUSTOM_VENV = Path("/home/ubuntu/source/mdio-python/.system")
+    BIN_DIR = CUSTOM_VENV / "bin"
+    PYTHON = BIN_DIR / "python"
+    PYTEST = BIN_DIR / "pytest"
+
+    if not PYTHON.exists():
+        session.error(f"Custom venv is missing a python executable: {PYTHON}")
+
+    # Prepend custom env's bin directory to PATH
+    session.env["PATH"] = f"{BIN_DIR}{os.pathsep}{session.env.get('PATH', '')}"
+    session.env["VIRTUAL_ENV"] = str(CUSTOM_VENV)
+
+    args = session.posargs or ["-q"]
+
+    # Use explicit absolute path for python and pytest
+    session.run(str(PYTHON), "--version")
+    session.run(str(PYTEST), *args)
+
+
+# =============================================================================
+# === END CUSTOM VENV HACK ====================================================
+# =============================================================================
+
 
 def session_install_uv(
     session: Session,
@@ -51,30 +107,19 @@ def session_install_uv_package(session: Session, packages: list[str]) -> None:
     """Install packages into the session's virtual environment using uv lockfile."""
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
 
-    # Export requirements.txt to session temp dir using uv with locked dependencies
+    # Export requirements.txt
     requirements_tmp = str(Path(session.create_tmp()) / "requirements.txt")
     export_args = ["uv", "export", "--only-dev", "--no-hashes", "-o", requirements_tmp]
     session.run_install(*export_args, silent=True, env=env)
 
-    # Install requested packages with requirements.txt constraints
+    # Install requested packages under constraints
     session.install(*packages, "--constraint", requirements_tmp)
 
 
 def activate_virtualenv_in_precommit_hooks(session: Session) -> None:
-    """Activate virtualenv in hooks installed by pre-commit.
-
-    This function patches git hooks installed by pre-commit to activate the
-    session's virtual environment. This allows pre-commit to locate hooks in
-    that environment when invoked from git.
-
-    Args:
-        session: The Session object.
-    """
+    """Activate virtualenv in hooks installed by pre-commit."""
     assert session.bin is not None  # noqa: S101
 
-    # Only patch hooks containing a reference to this session's bindir. Support
-    # quoting rules for Python and bash, but strip the outermost quotes so we
-    # can detect paths within the bindir, like <bindir>/python.
     bindirs = [
         bindir[1:-1] if bindir[0] in "'\"" else bindir for bindir in (repr(session.bin), shlex.quote(session.bin))
     ]
@@ -84,7 +129,6 @@ def activate_virtualenv_in_precommit_hooks(session: Session) -> None:
         return
 
     headers = {
-        # pre-commit < 2.16.0
         "python": f"""\
             import os
             os.environ["VIRTUAL_ENV"] = {virtualenv!r}
@@ -93,12 +137,10 @@ def activate_virtualenv_in_precommit_hooks(session: Session) -> None:
                 os.environ.get("PATH", ""),
             ))
             """,
-        # pre-commit >= 2.16.0
         "bash": f"""\
             VIRTUAL_ENV={shlex.quote(virtualenv)}
             PATH={shlex.quote(session.bin)}"{os.pathsep}$PATH"
             """,
-        # pre-commit >= 2.17.0 on Windows forces sh shebang
         "/bin/sh": f"""\
             VIRTUAL_ENV={shlex.quote(virtualenv)}
             PATH={shlex.quote(session.bin)}"{os.pathsep}$PATH"
@@ -148,8 +190,6 @@ def safety(session: Session) -> None:
     export_args = ["uv", "export", "--all-groups", "-o", requirements_tmp]
     session.run_install(*export_args, silent=True, env=env)
     session_install_uv_package(session, ["safety"])
-
-    # CVE-2019-8341, jinja2: not a problem for us
     ignore = ["70612"]
     session.run("safety", "check", "--full-report", f"--file={requirements_tmp}", f"--ignore={','.join(ignore)}")
 
@@ -182,12 +222,9 @@ def tests(session: Session) -> None:
 def coverage(session: Session) -> None:
     """Produce the coverage report."""
     args = session.posargs or ["report"]
-
     session_install_uv_package(session, ["coverage[toml]"])
-
     if not session.posargs and any(Path().glob(".coverage.*")):
         session.run("coverage", "combine")
-
     session.run("coverage", *args)
 
 
@@ -248,7 +285,7 @@ def docs_build(session: Session) -> None:
 
 @session(python=python_versions[0])
 def docs(session: Session) -> None:
-    """Build and serve the documentation with live reloading on file changes."""
+    """Build and serve docs with live reload."""
     args = session.posargs or ["--open-browser", "docs", "docs/_build"]
     session_install_uv(session)
     session_install_uv_package(

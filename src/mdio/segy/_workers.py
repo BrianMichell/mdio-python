@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import mdio_cpp
 import numpy as np
 from segy.arrays import HeaderArray
 
@@ -70,9 +71,10 @@ def header_scan_worker(
 
 def trace_worker(  # noqa: PLR0913
     segy_file: SegyFile,
-    data_array: zarr_Array,
-    header_array: zarr_Array | None,
-    raw_header_array: zarr_Array | None,
+    ds: mdio_cpp.Dataset,
+    # data_array: mdio_cpp.Variable,
+    # header_array: mdio_cpp.Variable | None,
+    # raw_header_array: mdio_cpp.Variable | None,
     region: dict[str, slice],
     grid_map: zarr_Array,
 ) -> SummaryStatistics | None:
@@ -96,6 +98,10 @@ def trace_worker(  # noqa: PLR0913
     region_slices = tuple(region.values())
     local_grid_map = grid_map[region_slices[:-1]]  # minus last (vertical) axis
 
+    slices = list()
+    for key, value in region.items():
+        slices.append((key, value.start, value.stop))
+
     # The dtype.max is the sentinel value for the grid map.
     # Normally, this is uint32, but some grids need to be promoted to uint64.
     not_null = local_grid_map != fill_value_map.get(local_grid_map.dtype.name)
@@ -110,30 +116,44 @@ def trace_worker(  # noqa: PLR0913
     # NOTE: The `raw_header_key` code block should be removed in full as it will become dead code.
     traces = SegyFileRawTraceWrapper(segy_file, live_trace_indexes)
 
-    # Compute slices once (headers exclude sample dimension)
-    header_region_slices = region_slices[:-1]  # Exclude sample dimension
+    sliced_ds = ds.isel(slices)
+    data_array = sliced_ds.get_variable("amplitude")
+    header_array = sliced_ds.get_variable("headers")
+    raw_header_array = sliced_ds.get_variable("raw_headers")
 
-    full_shape = tuple(s.stop - s.start for s in region_slices)
-    header_shape = tuple(s.stop - s.start for s in header_region_slices)
+    # data_array = data_array.slice(slices)
+    # header_array = header_array.slice(slices)
+    # raw_header_array = raw_header_array.slice(slices)
 
     # Write raw headers if array was provided
     # Headers only have spatial dimensions (no sample dimension)
     if raw_header_array is not None:
-        tmp_raw_headers = np.full(header_shape, raw_header_array.fill_value)
-        tmp_raw_headers[not_null] = traces.raw_header
-        raw_header_array[header_region_slices] = tmp_raw_headers
+        raw_var = raw_header_array.allocate_data()
+        raw_var.data[...][not_null] = (
+            np.ascontiguousarray(traces.raw_header).view(np.uint8).reshape(-1, raw_var.data.shape[-1])
+        )
+        raw_header_array.write_data(raw_var)
 
-    # Write headers if array was provided
-    # Headers only have spatial dimensions (no sample dimension)
     if header_array is not None:
-        tmp_headers = np.full(header_shape, header_array.fill_value)
-        tmp_headers[not_null] = traces.header
-        header_array[header_region_slices] = tmp_headers
+        header_var = header_array.allocate_data()
+
+        # Flatten spatial mask and target buffer
+        mask = not_null.ravel()
+        header_store = header_var.data.reshape(-1, header_var.data.shape[-1])  # (N_total, 216)
+
+        # Convert structured headers to contiguous bytes and trim 240 -> 216
+        header_bytes = (
+            np.ascontiguousarray(traces.header).view(np.uint8).reshape(mask.sum(), -1)[:, : header_store.shape[-1]]
+        )
+
+        # Masked assignment then write back
+        header_store[mask] = header_bytes
+        header_array.write_data(header_var)
 
     # Write the data variable
-    tmp_samples = np.full(full_shape, data_array.fill_value)
-    tmp_samples[not_null] = traces.sample
-    data_array[region_slices] = tmp_samples
+    data_var = data_array.allocate_data()
+    data_var.data[...][not_null] = traces.sample
+    data_array.write_data(data_var)
 
     nonzero_samples = np.ma.masked_values(traces.sample, 0, copy=False)
 

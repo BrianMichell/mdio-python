@@ -36,8 +36,9 @@ dask.config.set(scheduler="synchronous")
 @pytest.fixture
 def set_env_vars(monkeypatch: Generator[pytest.MonkeyPatch]) -> None:
     """Set environment variables for the Teapot dome tests."""
-    monkeypatch.setenv("MDIO__IMPORT__SAVE_SEGY_FILE_HEADER", "true")
+    monkeypatch.setenv("MDIO__IMPORT__SAVE_SEGY_FILE_HEADER", "false")
     monkeypatch.setenv("MDIO__IMPORT__RAW_HEADERS", "true")
+    monkeypatch.setenv("MDIO__IMPORT__CPU_COUNT", "1")
 
 
 @pytest.fixture
@@ -167,7 +168,8 @@ class TestTeapotRoundtrip:
             segy_spec=teapot_segy_spec,
             mdio_template=TemplateRegistry().get("PostStack3DTime"),
             input_path=segy_input,
-            output_path=zarr_tmp,
+            # output_path=zarr_tmp,
+            output_path="/home/ubuntu/source/mdio-cpp/teapot_example.mdio",
             overwrite=True,
         )
 
