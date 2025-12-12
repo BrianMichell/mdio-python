@@ -16,7 +16,7 @@ from segy import SegyFile
 from tqdm.auto import tqdm
 from zarr import open_group as zarr_open_group
 
-from mdio.api.io import _normalize_storage_options
+from mdio.api.io import _get_store
 from mdio.builder.schemas.v1.stats import CenteredBinHistogram
 from mdio.builder.schemas.v1.stats import SummaryStatistics
 from mdio.constants import ZarrFormat
@@ -83,12 +83,11 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
     zarr_format = zarr.config.get("default_zarr_format")
 
-    # Open zarr group once in main process
-    storage_options = _normalize_storage_options(output_path)
+    # Open zarr group once in main process using the UPath's filesystem
+    store = _get_store(output_path)
     zarr_group = zarr_open_group(
-        output_path.as_posix(),
+        store,
         mode="r+",
-        storage_options=storage_options,
         use_consolidated=zarr_format == ZarrFormat.V2,
     )
 

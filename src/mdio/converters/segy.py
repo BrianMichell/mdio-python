@@ -14,6 +14,7 @@ from segy.standards.codes import MeasurementSystem as SegyMeasurementSystem
 from segy.standards.fields import binary as binary_header_fields
 
 from mdio.api.io import _normalize_path
+from mdio.api.io import _normalize_storage_options
 from mdio.api.io import to_mdio
 from mdio.builder.schemas.chunk_grid import RegularChunkGrid
 from mdio.builder.schemas.chunk_grid import RegularChunkShape
@@ -513,6 +514,17 @@ def segy_to_mdio(  # noqa PLR0913
 
     Ingest a SEG-Y file according to the segy_spec. This could be a spec from registry or custom.
 
+    For cloud storage with specific credentials, pass UPath objects with storage options::
+
+        from upath import UPath
+
+        segy_to_mdio(
+            segy_spec=spec,
+            mdio_template=template,
+            input_path=UPath("s3://source-bucket/data.sgy", profile="source-profile"),
+            output_path=UPath("s3://dest-bucket/data.mdio", profile="dest-profile"),
+        )
+
     Args:
         segy_spec: The SEG-Y specification to use for the conversion.
         mdio_template: The MDIO template to use for the conversion.
@@ -536,7 +548,7 @@ def segy_to_mdio(  # noqa PLR0913
         err = f"Output location '{output_path.as_posix()}' exists. Set `overwrite=True` if intended."
         raise FileExistsError(err)
 
-    segy_settings = SegyFileSettings(storage_options=input_path.storage_options)
+    segy_settings = SegyFileSettings(storage_options=_normalize_storage_options(input_path))
     segy_file_kwargs: SegyFileArguments = {
         "url": input_path.as_posix(),
         "spec": segy_spec,

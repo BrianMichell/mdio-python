@@ -45,6 +45,16 @@ def mdio_to_segy(  # noqa: PLR0912, PLR0913, PLR0915
 
     A `selection_mask` can be provided (same shape as spatial grid) to export a subset.
 
+    For cloud storage with specific credentials, pass a UPath with storage options::
+
+        from upath import UPath
+
+        mdio_to_segy(
+            segy_spec=spec,
+            input_path=UPath("s3://bucket/data.mdio", profile="my-profile"),
+            output_path="local_output.segy",
+        )
+
     Args:
         segy_spec: The SEG-Y specification to use for the conversion.
         input_path: Store or URL (and cloud options) for MDIO file.
