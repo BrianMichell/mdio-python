@@ -21,7 +21,7 @@ from mdio.builder.schemas.v1.stats import CenteredBinHistogram
 from mdio.builder.schemas.v1.stats import SummaryStatistics
 from mdio.constants import ZarrFormat
 from mdio.core.config import MDIOSettings
-from mdio.core.indexing import ChunkIterator
+from mdio.core.indexing import ShardIterator
 from mdio.segy._workers import trace_worker
 from mdio.segy.creation import SegyPartRecord
 from mdio.segy.creation import concat_files
@@ -60,6 +60,9 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 ) -> SummaryStatistics:
     """Blocked I/O from SEG-Y to chunked `xarray.Dataset`.
 
+    When sharding is enabled, iteration is performed at the shard level for better I/O efficiency.
+    When sharding is disabled, iteration is performed at the chunk level for backward compatibility.
+
     Args:
         segy_file_kwargs: SEG-Y file arguments.
         output_path: Output universal path for the output MDIO dataset.
@@ -77,9 +80,22 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     final_stats = _create_stats()
 
     data_variable_chunks = data.encoding.get("chunks")
+    data_variable_shards = data.encoding.get("shards")
+
+    # When sharding is enabled, iterate at shard level for better I/O efficiency
+    # When disabled (shards is None), ShardIterator falls back to chunk-based iteration
     worker_chunks = data_variable_chunks[:-1] + (data.shape[-1],)  # un-chunk sample axis
-    chunk_iter = ChunkIterator(shape=data.shape, chunks=worker_chunks, dim_names=data.dims)
-    num_chunks = chunk_iter.num_chunks
+    worker_shards = None
+    if data_variable_shards is not None:
+        worker_shards = data_variable_shards[:-1] + (data.shape[-1],)  # un-chunk sample axis for shards too
+
+    shard_iter = ShardIterator(
+        shape=data.shape,
+        chunks=worker_chunks,
+        shards=worker_shards,
+        dim_names=data.dims,
+    )
+    num_blocks = shard_iter.num_shards
 
     zarr_format = zarr.config.get("default_zarr_format")
 
@@ -99,7 +115,7 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
-    num_workers = min(num_chunks, settings.import_cpus)
+    num_workers = min(num_blocks, settings.import_cpus)
     context = mp.get_context("spawn")
 
     # Use initializer to open segy file once per worker
@@ -110,9 +126,12 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
     segy_file = SegyFile(**segy_file_kwargs)
 
+    # Determine iteration unit description for progress bar
+    iter_unit = "shard" if shard_iter.is_sharded else "block"
+
     with executor:
         futures = []
-        for region in chunk_iter:
+        for region in shard_iter:
             # Pass zarr array handles directly to workers
             future = executor.submit(
                 trace_worker,
@@ -127,8 +146,8 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
         iterable = tqdm(
             as_completed(futures),
-            total=num_chunks,
-            unit="block",
+            total=num_blocks,
+            unit=iter_unit,
             desc="Ingesting traces",
         )
 

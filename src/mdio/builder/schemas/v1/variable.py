@@ -18,6 +18,7 @@ from pydantic import Field
 from mdio.builder.schemas.base import NamedArray
 from mdio.builder.schemas.chunk_grid import RectilinearChunkGrid
 from mdio.builder.schemas.chunk_grid import RegularChunkGrid
+from mdio.builder.schemas.chunk_grid import ShardedChunkGrid
 from mdio.builder.schemas.core import CamelCaseStrictModel
 from mdio.builder.schemas.dtype import ScalarType
 from mdio.builder.schemas.v1.stats import SummaryStatistics
@@ -34,7 +35,7 @@ class CoordinateMetadata(CamelCaseStrictModel):
 class VariableMetadata(CoordinateMetadata):
     """Complete Metadata for Variables and complex or large Coordinates."""
 
-    chunk_grid: RegularChunkGrid | RectilinearChunkGrid | None = Field(
+    chunk_grid: RegularChunkGrid | RectilinearChunkGrid | ShardedChunkGrid | None = Field(
         default=None,
         description="Chunk grid specification for the array.",
     )

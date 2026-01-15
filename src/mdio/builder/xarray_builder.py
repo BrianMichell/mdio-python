@@ -20,6 +20,7 @@ except ImportError:
     zfpy_ZFPY = None  # noqa: N816
     zarr_ZFPY = None  # noqa: N816
 
+from mdio.builder.schemas.chunk_grid import ShardedChunkGrid
 from mdio.builder.schemas.compressors import ZFP as mdio_ZFP  # noqa: N811
 from mdio.builder.schemas.compressors import Blosc as mdio_Blosc
 from mdio.builder.schemas.dimension import NamedDimension
@@ -123,6 +124,15 @@ def _get_zarr_chunks(var: Variable, all_named_dims: dict[str, NamedDimension]) -
     return _get_zarr_shape(var, all_named_dims=all_named_dims)
 
 
+def _get_zarr_shards(var: Variable) -> tuple[int, ...] | None:
+    """Get the shard shape for a variable, or None if sharding is not enabled."""
+    if var.metadata is None or var.metadata.chunk_grid is None:
+        return None
+    if not isinstance(var.metadata.chunk_grid, ShardedChunkGrid):
+        return None
+    return var.metadata.chunk_grid.configuration.shard_shape
+
+
 def _compressor_to_encoding(
     compressor: mdio_Blosc | mdio_ZFP | None,
 ) -> dict[str, BloscCodec | Blosc | zfpy_ZFPY | zarr_ZFPY] | None:
@@ -167,7 +177,7 @@ def _get_fill_value(data_type: ScalarType | StructuredType | str) -> any:
     return None
 
 
-def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
+def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912, PLR0915
     """Build an XArray dataset with correct dimensions and dtypes.
 
     This function constructs the underlying data structure for an XArray dataset,
@@ -223,10 +233,29 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
         fill_value_key = "_FillValue" if zarr_format == ZarrFormat.V2 else "fill_value"
         fill_value = _get_fill_value(v.data_type) if v.name != "headers" else None
 
+        # Handle sharding for Zarr v3
+        # Note: Sharding is only supported for simple scalar types, not structured types
+        # (e.g., headers) or void/bytes types (e.g., raw_headers) because Zarr's sharding
+        # codec cannot handle these dtypes. For non-shardable types, we use the shard shape
+        # as the chunk shape to maintain consistent I/O patterns across all variables.
+        shard_shape = _get_zarr_shards(v)
+        # Check for non-shardable types: structured types and void/bytes types (dtype.kind == 'V')
+        is_non_shardable = isinstance(v.data_type, StructuredType) or dtype.kind == "V"
+
+        # When sharding is configured for Zarr v3 but variable has non-shardable dtype,
+        # use shard shape as chunk shape to maintain consistent I/O patterns
+        if shard_shape is not None and zarr_format == ZarrFormat.V3 and is_non_shardable:
+            chunks_to_use = shard_shape
+        else:
+            chunks_to_use = original_chunks
+
         encoding = {
-            "chunks": original_chunks,
+            "chunks": chunks_to_use,
             fill_value_key: fill_value,
         }
+
+        if shard_shape is not None and zarr_format == ZarrFormat.V3 and not is_non_shardable:
+            encoding["shards"] = shard_shape
 
         compressor_encodings = _compressor_to_encoding(v.compressor)
 

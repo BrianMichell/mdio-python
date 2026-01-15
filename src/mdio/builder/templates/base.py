@@ -13,6 +13,8 @@ from mdio.builder.formatting_html import template_repr_html
 from mdio.builder.schemas import compressors
 from mdio.builder.schemas.chunk_grid import RegularChunkGrid
 from mdio.builder.schemas.chunk_grid import RegularChunkShape
+from mdio.builder.schemas.chunk_grid import ShardedChunkGrid
+from mdio.builder.schemas.chunk_grid import ShardedChunkShape
 from mdio.builder.schemas.dtype import ScalarType
 from mdio.builder.schemas.dtype import StructuredType
 from mdio.builder.schemas.v1.units import AllUnitModel
@@ -43,6 +45,7 @@ class AbstractDatasetTemplate(ABC):
         self._physical_coord_names: tuple[str, ...] = ()
         self._logical_coord_names: tuple[str, ...] = ()
         self._var_chunk_shape: tuple[int, ...] = ()
+        self._var_shard_shape: tuple[int, ...] | None = None  # Default to no sharding
 
         self._builder: MDIODatasetBuilder | None = None
         self._dim_sizes: tuple[int, ...] = ()
@@ -59,6 +62,7 @@ class AbstractDatasetTemplate(ABC):
             f"physical_coord_names={self._physical_coord_names}, "
             f"logical_coord_names={self._logical_coord_names}, "
             f"var_chunk_shape={self._var_chunk_shape}, "
+            f"var_shard_shape={self._var_shard_shape}, "
             f"dim_sizes={self._dim_sizes}, "
             f"units={self._units})"
         )
@@ -197,6 +201,41 @@ class AbstractDatasetTemplate(ABC):
         self._var_chunk_shape = shape
 
     @property
+    def full_shard_shape(self) -> tuple[int, ...] | None:
+        """Returns the shard shape for the variables, or None if sharding is disabled."""
+        if self._var_shard_shape is None:
+            return None
+
+        # If dimension sizes are not set yet, return the stored shape as-is
+        if len(self._dim_sizes) != len(self._dim_names):
+            return self._var_shard_shape
+
+        # Expand -1 values to full dimension sizes
+        return tuple(
+            dim_size if shard_size == -1 else shard_size
+            for shard_size, dim_size in zip(self._var_shard_shape, self._dim_sizes, strict=False)
+        )
+
+    @full_shard_shape.setter
+    def full_shard_shape(self, shape: tuple[int, ...] | None) -> None:
+        """Sets the shard shape for the variables, or None to disable sharding."""
+        if shape is None:
+            self._var_shard_shape = None
+            return
+
+        if len(shape) != len(self._dim_names):
+            msg = f"Shard shape {shape} has {len(shape)} dimensions, expected {len(self._dim_names)}"
+            raise ValueError(msg)
+
+        # Validate that all values are positive integers or -1
+        for shard_size in shape:
+            if shard_size != -1 and shard_size <= 0:
+                msg = f"Shard size must be positive integer or -1, got {shard_size}"
+                raise ValueError(msg)
+
+        self._var_shard_shape = shape
+
+    @property
     @abstractmethod
     def _name(self) -> str:
         """Abstract method to get the name of the template.
@@ -274,6 +313,27 @@ class AbstractDatasetTemplate(ABC):
                 if "same name twice" not in str(exc):
                     raise
 
+    def _create_chunk_grid(self, exclude_vertical: bool = False) -> RegularChunkGrid | ShardedChunkGrid:
+        """Create the appropriate chunk grid based on sharding configuration.
+
+        Args:
+            exclude_vertical: If True, excludes the vertical (last) dimension from shapes.
+                            Used for headers and other non-sample variables.
+
+        Returns:
+            RegularChunkGrid if sharding is disabled, ShardedChunkGrid if enabled.
+        """
+        chunk_shape = self.full_chunk_shape[:-1] if exclude_vertical else self.full_chunk_shape
+        shard_shape = self.full_shard_shape
+
+        if shard_shape is None:
+            # No sharding - use regular chunk grid
+            return RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=chunk_shape))
+
+        # Sharding enabled - create sharded chunk grid
+        shard_shape = shard_shape[:-1] if exclude_vertical else shard_shape
+        return ShardedChunkGrid(configuration=ShardedChunkShape(shard_shape=shard_shape, chunk_shape=chunk_shape))
+
     def _add_trace_mask(self) -> None:
         """Add trace mask variables."""
         self._builder.add_variable(
@@ -286,7 +346,7 @@ class AbstractDatasetTemplate(ABC):
 
     def _add_trace_headers(self, header_dtype: StructuredType) -> None:
         """Add trace mask variables."""
-        chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=self.full_chunk_shape[:-1]))
+        chunk_grid = self._create_chunk_grid(exclude_vertical=True)
         self._builder.add_variable(
             name="headers",
             dimensions=self.spatial_dimension_names,
@@ -302,7 +362,7 @@ class AbstractDatasetTemplate(ABC):
         A virtual method that can be overwritten by subclasses to add custom variables.
         Uses the class field 'builder' to add variables to the dataset.
         """
-        chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=self.full_chunk_shape))
+        chunk_grid = self._create_chunk_grid(exclude_vertical=False)
         unit = self.get_unit_by_key(self._default_variable_name)
         self._builder.add_variable(
             name=self.default_variable_name,

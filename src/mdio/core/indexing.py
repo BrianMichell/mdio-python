@@ -1,5 +1,7 @@
 """Indexing logic."""
 
+from __future__ import annotations
+
 import itertools
 from math import ceil
 
@@ -60,7 +62,7 @@ class ChunkIterator:
         self._ranges = itertools.product(*dim_ranges)
         self._idx = 0
 
-    def __iter__(self) -> "ChunkIterator":
+    def __iter__(self) -> ChunkIterator:
         """Iteration context."""
         return self
 
@@ -91,6 +93,113 @@ class ChunkIterator:
             else:
                 # Example
                 # (slice(3,6,None), slice(0,4,None), slice(0,5,None))
+                result = slices
+
+            self._idx += 1
+
+            return result
+
+        raise StopIteration
+
+
+class ShardIterator:
+    """Shard iterator for multi-dimensional arrays with sharding.
+
+    This iterator takes an array shape, shard sizes, and chunk sizes. It iterates
+    over shards (outer containers) rather than individual chunks. Each iteration
+    returns slices that align with shard boundaries.
+
+    When sharding is not enabled (shard_shape is None), it falls back to chunk-based
+    iteration for backward compatibility.
+
+    Args:
+        shape: The shape of the array.
+        chunks: The chunk sizes for each dimension (inner unit within shards).
+        shards: The shard sizes for each dimension (outer container). If None,
+                falls back to chunk-based iteration.
+        dim_names: The names of the array dimensions, to be used with DataArray.isel().
+                   If the dim_names are not provided, a tuple of the slices will be returned.
+
+    Attributes:             # noqa: DOC602
+        arr_shape: Shape of the array.
+        len_chunks: Length of chunks in each dimension.
+        len_shards: Length of shards in each dimension (equals chunks if not sharding).
+        dim_shards: Number of shards in each dimension.
+        num_shards: Total number of shards.
+        is_sharded: Whether sharding is enabled.
+
+    Examples:
+        # With sharding enabled:
+        >> shape = (256, 512, 1024)
+        >> chunks = (32, 32, 128)
+        >> shards = (128, 128, 512)
+        >> dims = ["inline", "crossline", "depth"]
+        >>
+        >> iter = ShardIterator(shape=shape, chunks=chunks, shards=shards, dim_names=dims)
+        >> for region in iter:
+        >>     print(region)
+        {"inline": slice(0, 128), "crossline": slice(0, 128), "depth": slice(0, 512)}
+        ...
+
+        # Without sharding (fallback to chunks):
+        >> iter = ShardIterator(shape=shape, chunks=chunks, shards=None, dim_names=dims)
+        >> # Behaves same as ChunkIterator
+    """
+
+    def __init__(
+        self,
+        shape: tuple[int, ...],
+        chunks: tuple[int, ...],
+        shards: tuple[int, ...] | None = None,
+        dim_names: tuple[str, ...] | None = None,
+    ):
+        self.arr_shape = tuple(shape)
+        self.len_chunks = tuple(chunks)
+        self.dims = dim_names
+        self.is_sharded = shards is not None
+
+        # Use shards if provided, otherwise fall back to chunks
+        self.len_shards = tuple(shards) if shards is not None else self.len_chunks
+
+        # Compute number of shards per dimension, and total number of shards
+        self.dim_shards = tuple(
+            [ceil(len_dim / shard) for len_dim, shard in zip(self.arr_shape, self.len_shards, strict=True)]
+        )
+        self.num_shards = int(np.prod(self.dim_shards))
+
+        # Under the hood stuff for the iterator. This generates C-ordered
+        # permutation of shard indices.
+        dim_ranges = [range(dim_len) for dim_len in self.dim_shards]
+        self._ranges = itertools.product(*dim_ranges)
+        self._idx = 0
+
+    def __iter__(self) -> ShardIterator:
+        """Iteration context."""
+        return self
+
+    def __len__(self) -> int:
+        """Get total number of shards."""
+        return self.num_shards
+
+    def __next__(self) -> dict[str, slice] | tuple[slice, ...]:
+        """Iteration logic."""
+        if self._idx < self.num_shards:
+            # We build slices here. It is dimension agnostic
+            current_start = next(self._ranges)
+
+            start_indices = tuple(dim * shard for dim, shard in zip(current_start, self.len_shards, strict=True))
+
+            # Calculate stop indices, making the last slice fit the data exactly
+            stop_indices = tuple(
+                min((dim + 1) * shard, self.arr_shape[i])
+                for i, (dim, shard) in enumerate(zip(current_start, self.len_shards, strict=True))
+            )
+
+            slices = tuple(slice(start, stop) for start, stop in zip(start_indices, stop_indices, strict=True))
+
+            if self.dims:  # noqa: SIM108
+                result = dict(zip(self.dims, slices, strict=False))
+            else:
                 result = slices
 
             self._idx += 1

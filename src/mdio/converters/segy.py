@@ -610,8 +610,8 @@ def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> Abst
         # Now add the raw headers variable
         chunk_shape = mdio_template.full_chunk_shape[:-1]
 
-        # Create chunk grid metadata
-        chunk_metadata = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=chunk_shape))
+        # Create chunk grid metadata using template's method to respect sharding config
+        chunk_grid = mdio_template._create_chunk_grid(chunk_shape)
 
         # Add the raw headers variable using the builder's add_variable method
         mdio_template._builder.add_variable(
@@ -621,7 +621,7 @@ def _add_raw_headers_to_template(mdio_template: AbstractDatasetTemplate) -> Abst
             data_type=ScalarType.BYTES240,
             compressor=Blosc(cname=BloscCname.zstd),
             coordinates=None,  # No coordinates as specified
-            metadata=VariableMetadata(chunk_grid=chunk_metadata),
+            metadata=VariableMetadata(chunk_grid=chunk_grid),
         )
 
     # Replace the template's _add_variables method
