@@ -1,7 +1,5 @@
 """Convert MDIO v1 schema Dataset to Xarray DataSet and write it in Zarr."""
 
-import logging
-
 import numcodecs
 import numpy as np
 import zarr
@@ -26,8 +24,6 @@ from mdio.constants import ZarrFormat
 from mdio.constants import fill_value_map
 from mdio.converters.type_converter import to_numpy_dtype
 from mdio.core.zarr_io import zarr_warnings_suppress_unstable_numcodecs_v3
-
-logger = logging.getLogger(__name__)
 
 
 def _import_numcodecs_zfpy() -> "type[numcodecs.ZFPY]":
@@ -212,18 +208,31 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912, PLR0915
         dtype = to_numpy_dtype(v.data_type)
         original_chunks = _get_zarr_chunks(v, all_named_dims=all_named_dims)
 
+        # Determine the final encoding chunks early to ensure Dask array alignment
+        # For non-shardable types with sharding configured, we'll use shard_shape as chunk_shape
+        shard_shape = _get_zarr_shards(v)
+        is_non_shardable = isinstance(v.data_type, StructuredType) or dtype.kind == "V"
+        zarr_format = zarr.config.get("default_zarr_format")
+
+        # Determine what the final encoding chunks will be
+        if shard_shape is not None and zarr_format == ZarrFormat.V3 and is_non_shardable:
+            encoding_chunks = shard_shape
+        else:
+            encoding_chunks = original_chunks
+
         # For efficient lazy array creation with Dask use larger chunks to minimize the task graph size
-        # Initialize with original chunks for lazy array creation
-        lazy_chunks = original_chunks
-        if shape != original_chunks:
-            # Compute automatic chunk sizes based on heuristics, respecting original chunks where possible
-            auto_chunks = normalize_chunks("auto", shape=shape, dtype=dtype, previous_chunks=original_chunks)
+        # Initialize with encoding chunks for lazy array creation to ensure alignment
+        lazy_chunks = encoding_chunks
+        if shape != encoding_chunks:
+            # Compute automatic chunk sizes based on heuristics, respecting encoding chunks where possible
+            auto_chunks = normalize_chunks("auto", shape=shape, dtype=dtype, previous_chunks=encoding_chunks)
 
             # Extract the primary (uniform) chunk size for each dimension, ignoring any variable remainder chunks
             uniform_auto = tuple(dim_chunks[0] for dim_chunks in auto_chunks)
 
-            # Ensure creation chunks are at least as large as the original chunks to avoid splitting chunks
-            lazy_chunks = tuple(max(auto, orig) for auto, orig in zip(uniform_auto, original_chunks, strict=True))
+            # Ensure creation chunks are at least as large as the encoding chunks to avoid splitting chunks
+            # This is critical for proper Zarr write alignment
+            lazy_chunks = tuple(max(auto, enc) for auto, enc in zip(uniform_auto, encoding_chunks, strict=True))
 
         data = dask_array.full(shape=shape, dtype=dtype, chunks=lazy_chunks, fill_value=_get_fill_value(v.data_type))
 
@@ -238,36 +247,13 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912, PLR0915
         if v.long_name:
             data_array.attrs["long_name"] = v.long_name
 
-        zarr_format = zarr.config.get("default_zarr_format")
+        # Use pre-computed zarr_format from above
         fill_value_key = "_FillValue" if zarr_format == ZarrFormat.V2 else "fill_value"
         fill_value = _get_fill_value(v.data_type) if v.name != "headers" else None
 
-        # Handle sharding for Zarr v3
-        # Note: Sharding is only supported for simple scalar types, not structured types
-        # (e.g., headers) or void/bytes types (e.g., raw_headers) because Zarr's sharding
-        # codec cannot handle these dtypes. For non-shardable types, we use the shard shape
-        # as the chunk shape to maintain consistent I/O patterns across all variables.
-        shard_shape = _get_zarr_shards(v)
-        # Check for non-shardable types: structured types and void/bytes types (dtype.kind == 'V')
-        is_non_shardable = isinstance(v.data_type, StructuredType) or dtype.kind == "V"
-
-        # When sharding is configured for Zarr v3 but variable has non-shardable dtype,
-        # use shard shape as chunk shape to maintain consistent I/O patterns
-        if shard_shape is not None and zarr_format == ZarrFormat.V3 and is_non_shardable:
-            dtype_desc = "structured" if isinstance(v.data_type, StructuredType) else "void/bytes"
-            logger.warning(
-                "Sharding is not supported for %s dtypes. Variable '%s' will use regular "
-                "chunking with chunk shape %s (shard shape) instead of sharding.",
-                dtype_desc,
-                v.name,
-                shard_shape,
-            )
-            chunks_to_use = shard_shape
-        else:
-            chunks_to_use = original_chunks
-
+        # Use pre-computed encoding_chunks from above (handles non-shardable types)
         encoding = {
-            "chunks": chunks_to_use,
+            "chunks": encoding_chunks,
             fill_value_key: fill_value,
         }
 

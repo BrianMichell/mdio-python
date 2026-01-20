@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from abc import ABC
 from abc import abstractmethod
 from typing import TYPE_CHECKING
@@ -24,6 +25,8 @@ from mdio.builder.schemas.v1.variable import VariableMetadata
 if TYPE_CHECKING:
     from mdio.builder.schemas.v1.dataset import Dataset
     from mdio.builder.templates.types import SeismicDataDomain
+
+logger = logging.getLogger(__name__)
 
 
 class AbstractDatasetTemplate(ABC):
@@ -313,15 +316,26 @@ class AbstractDatasetTemplate(ABC):
                 if "same name twice" not in str(exc):
                     raise
 
-    def _create_chunk_grid(self, exclude_vertical: bool = False) -> RegularChunkGrid | ShardedChunkGrid:
+    def _create_chunk_grid(
+        self,
+        exclude_vertical: bool = False,
+        is_shardable: bool = True,
+        variable_name: str | None = None,
+    ) -> RegularChunkGrid | ShardedChunkGrid:
         """Create the appropriate chunk grid based on sharding configuration.
 
         Args:
             exclude_vertical: If True, excludes the vertical (last) dimension from shapes.
                             Used for headers and other non-sample variables.
+            is_shardable: If False, the variable's dtype doesn't support sharding (e.g.,
+                         structured dtypes, void/bytes). When sharding is configured but
+                         the type is not shardable, a RegularChunkGrid with chunk_shape
+                         equal to shard_shape is returned instead.
+            variable_name: Optional variable name for logging purposes.
 
         Returns:
-            RegularChunkGrid if sharding is disabled, ShardedChunkGrid if enabled.
+            RegularChunkGrid if sharding is disabled or type is non-shardable,
+            ShardedChunkGrid if sharding is enabled and type supports it.
         """
         chunk_shape = self.full_chunk_shape[:-1] if exclude_vertical else self.full_chunk_shape
         shard_shape = self.full_shard_shape
@@ -330,8 +344,21 @@ class AbstractDatasetTemplate(ABC):
             # No sharding - use regular chunk grid
             return RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=chunk_shape))
 
-        # Sharding enabled - create sharded chunk grid
+        # Adjust shard shape for vertical exclusion
         shard_shape = shard_shape[:-1] if exclude_vertical else shard_shape
+
+        # When sharding is enabled but type is non-shardable, use shard shape as chunk shape
+        if not is_shardable:
+            var_desc = f"Variable '{variable_name}'" if variable_name else "Variable"
+            logger.warning(
+                "Sharding is not supported for this dtype. %s will use regular "
+                "chunking with chunk shape %s (shard shape) instead of sharding.",
+                var_desc,
+                shard_shape,
+            )
+            return RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=shard_shape))
+
+        # Sharding enabled and type supports it - create sharded chunk grid
         return ShardedChunkGrid(configuration=ShardedChunkShape(shard_shape=shard_shape, chunk_shape=chunk_shape))
 
     def _add_trace_mask(self) -> None:
@@ -345,8 +372,13 @@ class AbstractDatasetTemplate(ABC):
         )
 
     def _add_trace_headers(self, header_dtype: StructuredType) -> None:
-        """Add trace mask variables."""
-        chunk_grid = self._create_chunk_grid(exclude_vertical=True)
+        """Add trace headers variable with structured dtype."""
+        # Structured dtypes don't support Zarr sharding codec, so use regular chunking
+        chunk_grid = self._create_chunk_grid(
+            exclude_vertical=True,
+            is_shardable=False,
+            variable_name="headers",
+        )
         self._builder.add_variable(
             name="headers",
             dimensions=self.spatial_dimension_names,
