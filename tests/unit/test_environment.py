@@ -16,6 +16,7 @@ class TestEnvironment:
         [
             ("MDIO__EXPORT__CPU_COUNT", "8", "export_cpus", 8),
             ("MDIO__IMPORT__CPU_COUNT", "4", "import_cpus", 4),
+            ("MDIO__IMPORT__ZARR_THREADS", "8", "import_zarr_threads", 8),
             ("MDIO__GRID__SPARSITY_RATIO_WARN", "3.5", "grid_sparsity_ratio_warn", 3.5),
             ("MDIO__GRID__SPARSITY_RATIO_LIMIT", "15.0", "grid_sparsity_ratio_limit", 15.0),
         ],

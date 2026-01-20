@@ -89,9 +89,11 @@ def trace_worker(  # noqa: PLR0913
     Returns:
         SummaryStatistics object containing statistics about the written traces.
     """
-    # Setting the zarr config to 1 thread to ensure we honor the `MDIO__IMPORT__CPU_COUNT` environment variable.
-    # The Zarr 3 engine utilizes multiple threads. This can lead to resource contention and unpredictable memory usage.
-    zarr_config.set({"threading.max_workers": 1})
+    # Configure zarr threading based on MDIO__IMPORT__ZARR_THREADS setting.
+    # With shard-aligned writes, fewer workers are used, so we allow more zarr threads per worker
+    # to better utilize available CPU resources.
+    settings = MDIOSettings()
+    zarr_config.set({"threading.max_workers": settings.import_zarr_threads})
 
     region_slices = tuple(region.values())
     local_grid_map = grid_map[region_slices[:-1]]  # minus last (vertical) axis

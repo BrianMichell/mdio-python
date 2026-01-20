@@ -20,6 +20,11 @@ class MDIOSettings(BaseSettings):
         description="Number of CPUs to use for import operations",
         alias="MDIO__IMPORT__CPU_COUNT",
     )
+    import_zarr_threads: int = Field(
+        default=4,
+        description="Number of Zarr threads per worker during import operations",
+        alias="MDIO__IMPORT__ZARR_THREADS",
+    )
 
     # Grid sparsity configuration
     grid_sparsity_ratio_warn: float = Field(
