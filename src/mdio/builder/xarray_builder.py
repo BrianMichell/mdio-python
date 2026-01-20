@@ -1,5 +1,7 @@
 """Convert MDIO v1 schema Dataset to Xarray DataSet and write it in Zarr."""
 
+import logging
+
 import numcodecs
 import numpy as np
 import zarr
@@ -24,6 +26,8 @@ from mdio.constants import ZarrFormat
 from mdio.constants import fill_value_map
 from mdio.converters.type_converter import to_numpy_dtype
 from mdio.core.zarr_io import zarr_warnings_suppress_unstable_numcodecs_v3
+
+logger = logging.getLogger(__name__)
 
 
 def _import_numcodecs_zfpy() -> "type[numcodecs.ZFPY]":
@@ -250,6 +254,14 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912, PLR0915
         # When sharding is configured for Zarr v3 but variable has non-shardable dtype,
         # use shard shape as chunk shape to maintain consistent I/O patterns
         if shard_shape is not None and zarr_format == ZarrFormat.V3 and is_non_shardable:
+            dtype_desc = "structured" if isinstance(v.data_type, StructuredType) else "void/bytes"
+            logger.warning(
+                "Sharding is not supported for %s dtypes. Variable '%s' will use regular "
+                "chunking with chunk shape %s (shard shape) instead of sharding.",
+                dtype_desc,
+                v.name,
+                shard_shape,
+            )
             chunks_to_use = shard_shape
         else:
             chunks_to_use = original_chunks
