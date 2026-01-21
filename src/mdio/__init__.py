@@ -8,6 +8,7 @@ from mdio.api.io import open_mdio
 from mdio.api.io import to_mdio
 from mdio.converters import mdio_to_segy
 from mdio.converters import segy_to_mdio
+from mdio.converters import zgy_to_mdio
 from mdio.optimize.access_pattern import OptimizedAccessPatternConfig
 from mdio.optimize.access_pattern import optimize_access_patterns
 
@@ -23,6 +24,7 @@ __all__ = [
     "to_mdio",
     "mdio_to_segy",
     "segy_to_mdio",
+    "zgy_to_mdio",
     "OptimizedAccessPatternConfig",
     "optimize_access_patterns",
 ]
