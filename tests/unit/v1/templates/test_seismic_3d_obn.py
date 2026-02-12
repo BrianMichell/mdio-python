@@ -132,7 +132,7 @@ class TestSeismic3DObnReceiverGathersTemplate:
             "source_coord_y",
         )
         assert t._logical_coord_names == ("shot_point", "orig_field_record_num")
-        assert t._var_chunk_shape == (1, 1, 1, 3, 128, 4096)
+        assert t._var_chunk_shape == (1, 1, 1, 1, 512, 4096)
 
         # Variables instantiated when build_dataset() is called
         assert t._builder is None
@@ -146,15 +146,15 @@ class TestSeismic3DObnReceiverGathersTemplate:
     def test_chunk_size_calculation(self) -> None:
         """Test that chunk shape produces approximately 6 MiB chunks.
 
-        The chunk shape (1, 1, 1, 3, 128, 4096) produces:
-        1 * 1 * 1 * 3 * 128 * 4096 = 1,572,864 samples.
+        The chunk shape (1, 1, 1, 1, 512, 4096) produces:
+        1 * 1 * 1 * 1 * 512 * 4096 = 2,097,152 samples.
         With float32 (4 bytes): 1,572,864 * 4 = 6,291,456 bytes = 6 MiB.
         """
         t = Seismic3DObnReceiverGathersTemplate(data_domain="time")
 
         # Get the chunk shape
         chunk_shape = t.full_chunk_shape
-        assert chunk_shape == (1, 1, 1, 3, 128, 4096)
+        assert chunk_shape == (1, 1, 1, 1, 512, 4096)
 
         # Calculate the number of samples per chunk
         samples_per_chunk = 1
@@ -163,17 +163,17 @@ class TestSeismic3DObnReceiverGathersTemplate:
 
         # With float32 (4 bytes per sample), calculate chunk size in bytes
         bytes_per_chunk = samples_per_chunk * 4
-        assert bytes_per_chunk == 6 * 1024 * 1024  # 6 MiB
+        assert bytes_per_chunk == 8 * 1024 * 1024  # 8 MiB
 
     def test_chunking_optimized_for_shot_access(self) -> None:
         """Test that chunking is optimized for common-receiver gather access.
 
-        The chunk shape (1, 1, 1, 3, 128, 4096) is designed for:
+        The chunk shape (1, 1, 1, 1, 512, 4096) is designed for:
         - Single component per chunk
         - Single receiver per chunk (common-receiver gather access)
         - Single shot_line per chunk
         - All guns (typically 2-3) in one chunk
-        - 128 shot_index values per chunk for efficient shot iteration
+        - 512 shot_index values per chunk for efficient shot iteration
         """
         t = Seismic3DObnReceiverGathersTemplate(data_domain="time")
 
@@ -182,8 +182,8 @@ class TestSeismic3DObnReceiverGathersTemplate:
         assert chunk_shape[0] == 1  # component: single component per chunk
         assert chunk_shape[1] == 1  # receiver: single receiver per chunk
         assert chunk_shape[2] == 1  # shot_line: single shot line per chunk
-        assert chunk_shape[3] == 3  # gun: all guns in one chunk (typical OBN has 2-3 guns)
-        assert chunk_shape[4] == 128  # shot_index: good balance for shot iteration
+        assert chunk_shape[3] == 1  # gun: all guns in one chunk (typical OBN has 2-3 guns)
+        assert chunk_shape[4] == 512  # shot_index: good balance for shot iteration
         assert chunk_shape[5] == 4096  # time: full trace length
 
     def test_build_dataset(self, structured_headers: StructuredType) -> None:
@@ -216,7 +216,7 @@ class TestSeismic3DObnReceiverGathersTemplate:
         assert isinstance(seismic.compressor, Blosc)
         assert seismic.compressor.cname == BloscCname.zstd
         assert isinstance(seismic.metadata.chunk_grid, RegularChunkGrid)
-        assert seismic.metadata.chunk_grid.configuration.chunk_shape == (1, 1, 1, 3, 128, 4096)
+        assert seismic.metadata.chunk_grid.configuration.chunk_shape == (1, 1, 1, 1, 512, 4096)
         assert seismic.metadata.stats_v1 is None
 
     def test_depth_domain(self, structured_headers: StructuredType) -> None:

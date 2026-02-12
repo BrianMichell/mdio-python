@@ -546,16 +546,14 @@ class AutoChannelWrap(GridOverrideCommand):
         return index_headers
 
 
-class AutoShotWrap(GridOverrideCommand):
-    """Automatic shot index calculation from interleaved shot points.
+class CalculateShotIndex(GridOverrideCommand):
+    """Calculate dense shot_index from shot_point values for OBN templates.
 
-    This is a template-aware grid override that handles multi-gun acquisition where shot
-    points may be interleaved across guns. The behavior is determined by explicit template
-    type checks to ensure correct configuration.
+    Creates a 0-based shot_index dimension from sparse or interleaved shot_point
+    values, grouping by shot_line and gun. This is required for the OBN template
+    which uses shot_index as a calculated dimension.
 
-    Supported Templates:
-        - Seismic3DStreamerFieldRecordsTemplate: Uses sail_line, requires cable/channel
-        - Seismic3DObnReceiverGathersTemplate: Uses shot_line, no cable/channel required
+    Required headers: shot_line, gun, shot_point
 
     Attributes:
         required_parameters: Set of required parameters (None for this class).
@@ -565,44 +563,8 @@ class AutoShotWrap(GridOverrideCommand):
 
     @property
     def required_keys(self) -> set:
-        """Return minimal common keys for documentation purposes.
-
-        Note: Actual required keys are determined dynamically in validate()
-        based on template type via _get_template_config(). This property
-        exists to satisfy the ABC interface.
-        """
-        return {"gun", "shot_point"}  # Minimal common keys; full set computed from template
-
-    def _get_template_config(self, template: AbstractDatasetTemplate) -> tuple[str, set[str]]:
-        """Get line field and required keys based on template type.
-
-        Args:
-            template: The dataset template.
-
-        Returns:
-            Tuple of (line_field, required_keys).
-
-        Raises:
-            TypeError: If template type is not supported by AutoShotWrap.
-        """
-        # Import here to avoid circular imports at module load time
-        from mdio.builder.templates.seismic_3d_obn import Seismic3DObnReceiverGathersTemplate  # noqa: PLC0415
-        from mdio.builder.templates.seismic_3d_streamer_field import (  # noqa: PLC0415
-            Seismic3DStreamerFieldRecordsTemplate,
-        )
-
-        if isinstance(template, Seismic3DStreamerFieldRecordsTemplate):
-            return "sail_line", {"sail_line", "gun", "shot_point", "cable", "channel"}
-
-        if isinstance(template, Seismic3DObnReceiverGathersTemplate):
-            return "shot_line", {"shot_line", "gun", "shot_point"}
-
-        msg = (
-            f"AutoShotWrap does not support template type {type(template).__name__}. "
-            f"Supported templates: Seismic3DStreamerFieldRecordsTemplate, "
-            f"Seismic3DObnReceiverGathersTemplate"
-        )
-        raise TypeError(msg)
+        """Return required header keys for OBN shot index calculation."""
+        return {"shot_line", "gun", "shot_point"}
 
     def validate(
         self,
@@ -611,13 +573,22 @@ class AutoShotWrap(GridOverrideCommand):
         template: AbstractDatasetTemplate | None = None,
     ) -> None:
         """Validate if this transform should run on the type of data."""
+        # Import here to avoid circular imports at module load time
+        from mdio.builder.templates.seismic_3d_obn import Seismic3DObnReceiverGathersTemplate  # noqa: PLC0415
+
         if template is None:
-            msg = "AutoShotWrap requires a template to determine line field configuration."
+            msg = "CalculateShotIndex requires a template."
             raise TypeError(msg)
-        _, required_keys = self._get_template_config(template)
+
+        if not isinstance(template, Seismic3DObnReceiverGathersTemplate):
+            msg = (
+                f"CalculateShotIndex only supports Seismic3DObnReceiverGathersTemplate, got {type(template).__name__}."
+            )
+            raise TypeError(msg)
+
         index_names = set(index_headers.dtype.names)
-        if not required_keys.issubset(index_names):
-            raise GridOverrideKeysError(self.name, required_keys)
+        if not self.required_keys.issubset(index_names):
+            raise GridOverrideKeysError(self.name, self.required_keys)
         self.check_required_params(grid_overrides)
 
     def transform(
@@ -629,10 +600,97 @@ class AutoShotWrap(GridOverrideCommand):
         """Perform the grid transform to calculate shot_index from shot_point."""
         self.validate(index_headers, grid_overrides, template)
 
-        line_field, _ = self._get_template_config(template)
+        line_field = "shot_line"
         result = analyze_lines_for_guns(index_headers, line_field=line_field)
         unique_lines, unique_guns_per_line, geom_type = result
-        logger.info("Ingesting dataset as shot type: %s (line_field=%s)", geom_type.name, line_field)
+        logger.info("Ingesting OBN dataset as shot type: %s", geom_type.name)
+
+        max_num_guns = 1
+        for line_val in unique_lines:
+            guns = unique_guns_per_line[str(line_val)]
+            logger.info("%s: %s has guns: %s", line_field, line_val, guns)
+            max_num_guns = max(len(guns), max_num_guns)
+
+        # Only calculate shot_index when shot points are interleaved across guns (Type B)
+        if geom_type == ShotGunGeometryType.B:
+            shot_index = np.empty(len(index_headers), dtype="uint32")
+            # Use .base if available (view of another array), otherwise use the array directly
+            base_array = index_headers.base if index_headers.base is not None else index_headers
+            index_headers = rfn.append_fields(base_array, "shot_index", shot_index)
+
+            for line_val in unique_lines:
+                line_idxs = np.where(index_headers[line_field][:] == line_val)
+                index_headers["shot_index"][line_idxs] = np.floor(index_headers["shot_point"][line_idxs] / max_num_guns)
+                # Make shot index zero-based PER line
+                index_headers["shot_index"][line_idxs] -= index_headers["shot_index"][line_idxs].min()
+
+        return index_headers
+
+
+class AutoShotWrap(GridOverrideCommand):
+    """Automatic shot index calculation from interleaved shot points for Streamer templates.
+
+    This grid override handles multi-gun acquisition where shot points may be
+    interleaved across guns. It calculates a dense shot_index from sparse shot_point values.
+
+    Supported Templates:
+        - Seismic3DStreamerFieldRecordsTemplate: Uses sail_line, requires cable/channel
+
+    Note:
+        For OBN templates, use CalculateShotIndex instead.
+
+    Attributes:
+        required_parameters: Set of required parameters (None for this class).
+    """
+
+    required_parameters = None
+
+    @property
+    def required_keys(self) -> set:
+        """Return required header keys for streamer shot index calculation."""
+        return {"sail_line", "gun", "shot_point", "cable", "channel"}
+
+    def validate(
+        self,
+        index_headers: HeaderArray,
+        grid_overrides: dict[str, bool | int],
+        template: AbstractDatasetTemplate | None = None,
+    ) -> None:
+        """Validate if this transform should run on the type of data."""
+        # Import here to avoid circular imports at module load time
+        from mdio.builder.templates.seismic_3d_streamer_field import (  # noqa: PLC0415
+            Seismic3DStreamerFieldRecordsTemplate,
+        )
+
+        if template is None:
+            msg = "AutoShotWrap requires a template."
+            raise TypeError(msg)
+
+        if not isinstance(template, Seismic3DStreamerFieldRecordsTemplate):
+            msg = (
+                f"AutoShotWrap only supports Seismic3DStreamerFieldRecordsTemplate, "
+                f"got {type(template).__name__}. For OBN templates, use CalculateShotIndex."
+            )
+            raise TypeError(msg)
+
+        index_names = set(index_headers.dtype.names)
+        if not self.required_keys.issubset(index_names):
+            raise GridOverrideKeysError(self.name, self.required_keys)
+        self.check_required_params(grid_overrides)
+
+    def transform(
+        self,
+        index_headers: HeaderArray,
+        grid_overrides: dict[str, bool | int],
+        template: AbstractDatasetTemplate,
+    ) -> NDArray:
+        """Perform the grid transform to calculate shot_index from shot_point."""
+        self.validate(index_headers, grid_overrides, template)
+
+        line_field = "sail_line"
+        result = analyze_lines_for_guns(index_headers, line_field=line_field)
+        unique_lines, unique_guns_per_line, geom_type = result
+        logger.info("Ingesting streamer dataset as shot type: %s", geom_type.name)
 
         max_num_guns = 1
         for line_val in unique_lines:
@@ -669,6 +727,7 @@ class GridOverrider:
         self.commands = {
             "AutoChannelWrap": AutoChannelWrap(),
             "AutoShotWrap": AutoShotWrap(),
+            "CalculateShotIndex": CalculateShotIndex(),
             "NonBinned": NonBinned(),
             "HasDuplicates": DuplicateIndex(),
         }

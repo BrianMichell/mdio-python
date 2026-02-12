@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING
 
 import dask
+import pytest
 import xarray.testing as xrt
 from tests.integration.conftest import get_segy_mock_obn_spec
 
@@ -23,14 +24,14 @@ os.environ["MDIO__IMPORT__SAVE_SEGY_FILE_HEADER"] = "true"
 class TestImportObnWithComponent:
     """Test OBN SEG-Y import with component header (standard case)."""
 
-    def test_import_obn_with_auto_shot_wrap(
+    def test_import_obn_with_calculate_shot_index(
         self,
         segy_mock_obn_with_component: Path,
         zarr_tmp: Path,
     ) -> None:
-        """Test importing OBN SEG-Y with AutoShotWrap grid override."""
+        """Test importing OBN SEG-Y with CalculateShotIndex grid override."""
         segy_spec = get_segy_mock_obn_spec(include_component=True)
-        grid_override = {"AutoShotWrap": True}
+        grid_override = {"CalculateShotIndex": True}
 
         segy_to_mdio(
             segy_spec=segy_spec,
@@ -84,7 +85,7 @@ class TestImportObnSyntheticComponent:
     ) -> None:
         """Test importing OBN SEG-Y without component - component is automatically synthesized."""
         segy_spec = get_segy_mock_obn_spec(include_component=False)
-        grid_override = {"AutoShotWrap": True}
+        grid_override = {"CalculateShotIndex": True}
 
         segy_to_mdio(
             segy_spec=segy_spec,
@@ -126,3 +127,34 @@ class TestImportObnSyntheticComponent:
         # Check that shot_point is preserved as a coordinate
         assert "shot_point" in ds.coords
         assert ds["shot_point"].dims == ("shot_line", "gun", "shot_index")
+
+
+class TestImportObnMissingCalculateShotIndex:
+    """Test OBN SEG-Y import without CalculateShotIndex grid override."""
+
+    def test_import_obn_without_calculate_shot_index_raises(
+        self,
+        segy_mock_obn_with_component: Path,
+        zarr_tmp: Path,
+    ) -> None:
+        """Test that importing OBN SEG-Y without CalculateShotIndex raises ValueError.
+
+        The OBN template has shot_index as a calculated dimension. Without the
+        CalculateShotIndex grid override, the shot_index field is not computed, and
+        the import should fail with a clear error message.
+        """
+        segy_spec = get_segy_mock_obn_spec(include_component=True)
+
+        with pytest.raises(ValueError, match=r"Required computed fields.*not found after grid overrides") as exc_info:
+            segy_to_mdio(
+                segy_spec=segy_spec,
+                mdio_template=TemplateRegistry().get("ObnReceiverGathers3D"),
+                input_path=segy_mock_obn_with_component,
+                output_path=zarr_tmp,
+                overwrite=True,
+                grid_overrides=None,  # No CalculateShotIndex
+            )
+
+        error_message = str(exc_info.value)
+        assert "shot_index" in error_message
+        assert "ObnReceiverGathers3D" in error_message

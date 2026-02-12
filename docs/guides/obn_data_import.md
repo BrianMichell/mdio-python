@@ -6,14 +6,14 @@ This guide covers the `ObnReceiverGathers3D` template for importing Ocean Bottom
 
 The `ObnReceiverGathers3D` template organizes data with the following dimensions:
 
-| Dimension      | Description                                                                        |
-| -------------- | ---------------------------------------------------------------------------------- |
-| `component`    | Sensor component (e.g., 1=X, 2=Y, 3=Z, 4=Hydrophone)                               |
-| `receiver`     | Ocean bottom node receiver ID                                                      |
-| `shot_line`    | Shot line identifier                                                               |
-| `gun`          | Gun identifier for multi-gun sources                                               |
-| `shot_index`   | Calculated dense index for shots (see [AutoShotWrap](#autoshotwrap-grid-override)) |
-| `time`/`depth` | Vertical sample axis                                                               |
+| Dimension      | Description                                                                               |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `component`    | Sensor component (e.g., 1=X, 2=Y, 3=Z, 4=Hydrophone)                                      |
+| `receiver`     | Ocean bottom node receiver ID                                                             |
+| `shot_line`    | Shot line identifier                                                                      |
+| `gun`          | Gun identifier for multi-gun sources                                                      |
+| `shot_index`   | Calculated dense index for shots (see [Required Grid Overrides](#required-grid-overrides)) |
+| `time`/`depth` | Vertical sample axis                                                                      |
 
 ### Coordinates
 
@@ -24,11 +24,15 @@ The `ObnReceiverGathers3D` template organizes data with the following dimensions
 The `shot_index` dimension is calculated (0 to N-1) from `shot_point` values during ingestion. Original `shot_point` values are preserved as a coordinate indexed by `(shot_line, gun, shot_index)`.
 ```
 
-## Special Behaviors
+## Required Grid Overrides
 
-### AutoShotWrap Grid Override
+### CalculateShotIndex (Required)
 
-The `AutoShotWrap` grid override handles multi-gun acquisition where shot points are interleaved across guns. It calculates a dense `shot_index` from sparse `shot_point` values:
+The `CalculateShotIndex` grid override is **required** for the `ObnReceiverGathers3D` template. It calculates the `shot_index` dimension from `shot_point` values. Without this override, the import will fail with an error:
+
+> Required computed fields ['shot_index'] for template ObnReceiverGathers3D not found after grid overrides.
+
+This override handles multi-gun acquisition where shot points are interleaved across guns, calculating a dense `shot_index` from sparse `shot_point` values:
 
 ```
 Before (interleaved shot_point):
@@ -41,6 +45,8 @@ After (dense shot_index):
 ```
 
 For `ObnReceiverGathers3D`, the override uses `shot_line` as the line field and requires `shot_line`, `gun`, and `shot_point` headers.
+
+## Special Behaviors
 
 ### Component Synthesis
 
@@ -85,7 +91,7 @@ segy_to_mdio(
     output_path="obn_data.mdio",
     segy_spec=obn_spec,
     mdio_template=get_template("ObnReceiverGathers3D"),
-    grid_overrides={"AutoShotWrap": True},
+    grid_overrides={"CalculateShotIndex": True},
     overwrite=True,
 )
 ```
@@ -148,5 +154,6 @@ receiver_gather["amplitude"].plot()
 
 ## See Also
 
-- [Template Registry](template_registry.md)
-- [Quickstart Tutorial](tutorials/quickstart.ipynb)
+- [Grid Overrides](grid_overrides.md) - All available grid overrides
+- [Template Registry](../template_registry.md)
+- [Quickstart Tutorial](../tutorials/quickstart.ipynb)

@@ -24,8 +24,14 @@ configuration
 :caption: Learning and Support
 
 tutorials/index
-obn_data_import
 api_reference
+```
+
+```{toctree}
+:hidden:
+:caption: Guides
+
+guides/index
 ```
 
 ```{toctree}

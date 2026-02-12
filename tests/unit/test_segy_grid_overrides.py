@@ -164,11 +164,11 @@ class TestObnGridOverrides:
     full flow coverage. These unit tests focus on grid override functionality.
     """
 
-    def test_auto_shot_wrap_obn(self) -> None:
-        """Test AutoShotWrap calculates shot_index from interleaved shot_points for OBN.
+    def test_calculate_shot_index_obn(self) -> None:
+        """Test CalculateShotIndex calculates shot_index from interleaved shot_points for OBN.
 
-        AutoShotWrap is template-aware: with an OBN template it uses shot_line
-        and doesn't require cable/channel headers.
+        CalculateShotIndex is specific to OBN templates and uses shot_line
+        without requiring cable/channel headers.
         """
         from mdio.builder.template_registry import TemplateRegistry  # noqa: PLC0415
 
@@ -199,10 +199,10 @@ class TestObnGridOverrides:
         headers = np.array(records, dtype=hdr_dtype)
 
         index_names = ("receiver", "shot_line", "gun", "shot_point")
-        grid_overrides = {"AutoShotWrap": True}
+        grid_overrides = {"CalculateShotIndex": True}
         chunksize = (8, 1, 2, 8, 4096)
 
-        # Use OBN template so AutoShotWrap detects shot_line usage
+        # Use OBN template for CalculateShotIndex
         obn_template = TemplateRegistry().get("ObnReceiverGathers3D")
 
         new_headers, new_names, new_chunks = run_override(
