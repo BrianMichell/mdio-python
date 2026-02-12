@@ -180,7 +180,6 @@ def tests(session: Session) -> None:
             session.notify("coverage", posargs=[])
 
 
-
 # We must pass `--clear` due to different session options during pipeline runs
 # https://github.com/TGSAI/mdio-python/blob/3d01a6d8c93cabeaeff1829599327ae83c7d6593/.github/workflows/tests.yml#L123-L130
 @session(python=python_versions[0], venv_params=["--clear"])
