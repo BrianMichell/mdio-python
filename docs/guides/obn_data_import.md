@@ -6,14 +6,14 @@ This guide covers the `ObnReceiverGathers3D` template for importing Ocean Bottom
 
 The `ObnReceiverGathers3D` template organizes data with the following dimensions:
 
-| Dimension      | Description                                                                               |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| `component`    | Sensor component (e.g., 1=X, 2=Y, 3=Z, 4=Hydrophone)                                      |
-| `receiver`     | Ocean bottom node receiver ID                                                             |
-| `shot_line`    | Shot line identifier                                                                      |
-| `gun`          | Gun identifier for multi-gun sources                                                      |
+| Dimension      | Description                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `component`    | Sensor component (e.g., 1=X, 2=Y, 3=Z, 4=Hydrophone)                                       |
+| `receiver`     | Ocean bottom node receiver ID                                                              |
+| `shot_line`    | Shot line identifier                                                                       |
+| `gun`          | Gun identifier for multi-gun sources                                                       |
 | `shot_index`   | Calculated dense index for shots (see [Required Grid Overrides](#required-grid-overrides)) |
-| `time`/`depth` | Vertical sample axis                                                                      |
+| `time`/`depth` | Vertical sample axis                                                                       |
 
 ### Coordinates
 

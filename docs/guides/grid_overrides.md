@@ -69,12 +69,12 @@ A warning is logged when component is synthesized:
 
 Grid overrides validate their requirements and raise specific exceptions:
 
-| Exception | Cause |
-| --------- | ----- |
-| `GridOverrideUnknownError` | Unknown override name passed |
-| `GridOverrideKeysError` | Required header fields missing |
-| `GridOverrideMissingParameterError` | Required parameters not provided |
-| `GridOverrideIncompatibleError` | Override incompatible with template |
+| Exception                           | Cause                               |
+| ----------------------------------- | ----------------------------------- |
+| `GridOverrideUnknownError`          | Unknown override name passed        |
+| `GridOverrideKeysError`             | Required header fields missing      |
+| `GridOverrideMissingParameterError` | Required parameters not provided    |
+| `GridOverrideIncompatibleError`     | Override incompatible with template |
 
 **Example error message:**
 
