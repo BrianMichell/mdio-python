@@ -4,7 +4,7 @@ from typing import Any
 
 from mdio.builder.schemas import compressors
 from mdio.builder.schemas.dtype import ScalarType
-from mdio.builder.schemas.v1.variable import CoordinateMetadata
+from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.base import AbstractDatasetTemplate
 
 
@@ -39,19 +39,19 @@ class Seismic3DReceiverGathersTemplate(AbstractDatasetTemplate):
             "receiver",
             dimensions=("receiver",),
             data_type=ScalarType.UINT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("receiver")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("receiver")),
         )
         self._builder.add_coordinate(
             "shot_line",
             dimensions=("shot_line",),
             data_type=ScalarType.UINT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("shot_line")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("shot_line")),
         )
         self._builder.add_coordinate(
             self.trace_domain,
             dimensions=(self.trace_domain,),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
         )
 
         # Add non-dimension coordinates
@@ -63,14 +63,14 @@ class Seismic3DReceiverGathersTemplate(AbstractDatasetTemplate):
             dimensions=("receiver",),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("receiver_x")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("receiver_x")),
         )
         self._builder.add_coordinate(
             "receiver_y",
             dimensions=("receiver",),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("receiver_y")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("receiver_y")),
         )
 
         # Shot point coordinate (actual shot point numbers, varies by shot_line and shot_index)
@@ -79,7 +79,7 @@ class Seismic3DReceiverGathersTemplate(AbstractDatasetTemplate):
             dimensions=("shot_line", "shot_index"),
             data_type=ScalarType.UINT32,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("shot_point")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("shot_point")),
         )
 
         # Source coordinates (vary by shot_line and shot_index)
@@ -88,12 +88,12 @@ class Seismic3DReceiverGathersTemplate(AbstractDatasetTemplate):
             dimensions=("shot_line", "shot_index"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("source_coord_x")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("source_coord_x")),
         )
         self._builder.add_coordinate(
             "source_coord_y",
             dimensions=("shot_line", "shot_index"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("source_coord_y")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("source_coord_y")),
         )

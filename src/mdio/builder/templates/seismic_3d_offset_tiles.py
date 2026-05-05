@@ -4,7 +4,7 @@ from typing import Any
 
 from mdio.builder.schemas import compressors
 from mdio.builder.schemas.dtype import ScalarType
-from mdio.builder.schemas.v1.variable import CoordinateMetadata
+from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.base import AbstractDatasetTemplate
 from mdio.builder.templates.types import SeismicDataDomain
 
@@ -39,31 +39,31 @@ class Seismic3DOffsetTilesTemplate(AbstractDatasetTemplate):
             "inline",
             dimensions=("inline",),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("inline")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("inline")),
         )
         self._builder.add_coordinate(
             "crossline",
             dimensions=("crossline",),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("crossline")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("crossline")),
         )
         self._builder.add_coordinate(
             "inline_offset_tile",
             dimensions=("inline_offset_tile",),
             data_type=ScalarType.INT16,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("inline_offset_tile")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("inline_offset_tile")),
         )
         self._builder.add_coordinate(
             "crossline_offset_tile",
             dimensions=("crossline_offset_tile",),
             data_type=ScalarType.INT16,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("crossline_offset_tile")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("crossline_offset_tile")),
         )
         self._builder.add_coordinate(
             self.trace_domain,
             dimensions=(self.trace_domain,),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
         )
 
         # Add non-dimension coordinates
@@ -75,12 +75,12 @@ class Seismic3DOffsetTilesTemplate(AbstractDatasetTemplate):
             dimensions=("inline", "crossline"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("cdp_x")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("cdp_x")),
         )
         self._builder.add_coordinate(
             "cdp_y",
             dimensions=("inline", "crossline"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("cdp_y")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("cdp_y")),
         )

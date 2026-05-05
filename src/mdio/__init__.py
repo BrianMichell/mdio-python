@@ -8,8 +8,15 @@ from mdio.api.io import open_mdio
 from mdio.api.io import to_mdio
 from mdio.converters import mdio_to_segy
 from mdio.converters import segy_to_mdio
+from mdio.ingestion import CoordinateSpec
+from mdio.ingestion import DimensionSpec
+from mdio.ingestion import IndexStrategy
+from mdio.ingestion import IndexStrategyRegistry
+from mdio.ingestion import ResolvedSchema
+from mdio.ingestion import run_segy_ingestion
 from mdio.optimize.access_pattern import OptimizedAccessPatternConfig
 from mdio.optimize.access_pattern import optimize_access_patterns
+from mdio.segy.geometry import GridOverrides
 
 try:
     __version__ = metadata.version("multidimio")
@@ -25,4 +32,11 @@ __all__ = [
     "segy_to_mdio",
     "OptimizedAccessPatternConfig",
     "optimize_access_patterns",
+    "GridOverrides",
+    "run_segy_ingestion",
+    "IndexStrategy",
+    "IndexStrategyRegistry",
+    "ResolvedSchema",
+    "CoordinateSpec",
+    "DimensionSpec",
 ]

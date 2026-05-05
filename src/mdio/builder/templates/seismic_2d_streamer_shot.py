@@ -4,7 +4,7 @@ from typing import Any
 
 from mdio.builder.schemas import compressors
 from mdio.builder.schemas.dtype import ScalarType
-from mdio.builder.schemas.v1.variable import CoordinateMetadata
+from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.base import AbstractDatasetTemplate
 from mdio.builder.templates.types import SeismicDataDomain
 
@@ -33,7 +33,7 @@ class Seismic2DStreamerShotGathersTemplate(AbstractDatasetTemplate):
                 name,
                 dimensions=(name,),
                 data_type=ScalarType.INT32,
-                metadata=CoordinateMetadata(units_v1=self.get_unit_by_key(name)),
+                metadata=VariableMetadata(units_v1=self.get_unit_by_key(name)),
             )
 
         # Add non-dimension coordinates
@@ -43,26 +43,26 @@ class Seismic2DStreamerShotGathersTemplate(AbstractDatasetTemplate):
             dimensions=("shot_point",),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("source_coord_x")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("source_coord_x")),
         )
         self._builder.add_coordinate(
             "source_coord_y",
             dimensions=("shot_point",),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("source_coord_y")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("source_coord_y")),
         )
         self._builder.add_coordinate(
             "group_coord_x",
             dimensions=("shot_point", "channel"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("group_coord_x")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("group_coord_x")),
         )
         self._builder.add_coordinate(
             "group_coord_y",
             dimensions=("shot_point", "channel"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("group_coord_y")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("group_coord_y")),
         )

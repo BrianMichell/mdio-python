@@ -3,10 +3,14 @@
 from typing import Any
 
 from mdio.builder.schemas import compressors
+from mdio.builder.schemas.chunk_grid import RegularChunkGrid
+from mdio.builder.schemas.chunk_grid import RegularChunkShape
 from mdio.builder.schemas.dtype import ScalarType
-from mdio.builder.schemas.v1.variable import CoordinateMetadata
+from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.base import AbstractDatasetTemplate
 from mdio.builder.templates.types import SeismicDataDomain
+from mdio.core.utils_write import MAX_COORDINATES_BYTES
+from mdio.core.utils_write import get_constrained_chunksize
 
 
 class Seismic3DCocaGathersTemplate(AbstractDatasetTemplate):
@@ -26,50 +30,80 @@ class Seismic3DCocaGathersTemplate(AbstractDatasetTemplate):
     def _load_dataset_attributes(self) -> dict[str, Any]:
         return {"surveyType": "3D", "gatherType": "common_offset_common_azimuth"}
 
+    def declare_coordinate_specs(self) -> tuple[Any, ...]:
+        from mdio.ingestion.schema_resolver import CoordinateSpec
+
+        return (
+            CoordinateSpec(
+                name="cdp_x",
+                dimensions=("inline", "crossline"),
+                dtype=ScalarType.FLOAT64,
+                source="header",
+                header_key="cdp_x",
+            ),
+            CoordinateSpec(
+                name="cdp_y",
+                dimensions=("inline", "crossline"),
+                dtype=ScalarType.FLOAT64,
+                source="header",
+                header_key="cdp_y",
+            ),
+        )
+
     def _add_coordinates(self) -> None:
         # Add dimension coordinates
         self._builder.add_coordinate(
             "inline",
             dimensions=("inline",),
             data_type=ScalarType.INT32,
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("inline")),
         )
         self._builder.add_coordinate(
             "crossline",
             dimensions=("crossline",),
             data_type=ScalarType.INT32,
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("crossline")),
         )
         self._builder.add_coordinate(
             "offset",
             dimensions=("offset",),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("offset")),  # same unit as X/Y
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("offset")),  # same unit as X/Y
         )
         self._builder.add_coordinate(
             "azimuth",
             dimensions=("azimuth",),
             data_type=ScalarType.FLOAT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("azimuth")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("azimuth")),
         )
         self._builder.add_coordinate(
             self.trace_domain,
             dimensions=(self.trace_domain,),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
         )
 
         # Add non-dimension coordinates
+        coord_spatial_shape = (self._dim_sizes[0], self._dim_sizes[1])  # inline, crossline
+        coord_chunk_shape = get_constrained_chunksize(
+            coord_spatial_shape,
+            ScalarType.FLOAT64,
+            MAX_COORDINATES_BYTES,
+        )
+        chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape))
+
         compressor = compressors.Blosc(cname=compressors.BloscCname.zstd)
         self._builder.add_coordinate(
             "cdp_x",
             dimensions=("inline", "crossline"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("cdp_x")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("cdp_x"), chunk_grid=chunk_grid),
         )
         self._builder.add_coordinate(
             "cdp_y",
             dimensions=("inline", "crossline"),
             data_type=ScalarType.FLOAT64,
             compressor=compressor,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("cdp_y")),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("cdp_y"), chunk_grid=chunk_grid),
         )

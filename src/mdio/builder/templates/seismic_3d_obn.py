@@ -2,10 +2,16 @@
 
 from typing import Any
 
+from mdio.builder.schemas.chunk_grid import RegularChunkGrid
+from mdio.builder.schemas.chunk_grid import RegularChunkShape
+from mdio.builder.schemas.compressors import Blosc
+from mdio.builder.schemas.compressors import BloscCname
 from mdio.builder.schemas.dtype import ScalarType
-from mdio.builder.schemas.v1.variable import CoordinateMetadata
+from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.builder.templates.base import AbstractDatasetTemplate
 from mdio.builder.templates.types import SeismicDataDomain
+from mdio.core.utils_write import MAX_COORDINATES_BYTES
+from mdio.core.utils_write import get_constrained_chunksize
 
 
 class Seismic3DObnReceiverGathersTemplate(AbstractDatasetTemplate):
@@ -41,6 +47,7 @@ class Seismic3DObnReceiverGathersTemplate(AbstractDatasetTemplate):
         )
         self._logical_coord_names = ("shot_point", "orig_field_record_num")
         self._var_chunk_shape = (1, 1, 1, 1, 512, 4096)
+        self.synthesize_missing_dims = ("component",)
 
     @property
     def _name(self) -> str:
@@ -48,6 +55,54 @@ class Seismic3DObnReceiverGathersTemplate(AbstractDatasetTemplate):
 
     def _load_dataset_attributes(self) -> dict[str, Any]:
         return {"surveyType": "3D", "gatherType": "common_receiver"}
+
+    def declare_coordinate_specs(self) -> tuple[Any, ...]:
+        from mdio.ingestion.schema_resolver import CoordinateSpec
+
+        return (
+            CoordinateSpec(
+                name="group_coord_x",
+                dimensions=("receiver",),
+                dtype=ScalarType.FLOAT64,
+                source="header",
+                header_key="group_coord_x",
+            ),
+            CoordinateSpec(
+                name="group_coord_y",
+                dimensions=("receiver",),
+                dtype=ScalarType.FLOAT64,
+                source="header",
+                header_key="group_coord_y",
+            ),
+            CoordinateSpec(
+                name="shot_point",
+                dimensions=("shot_line", "gun", "shot_index"),
+                dtype=ScalarType.UINT32,
+                source="header",
+                header_key="shot_point",
+            ),
+            CoordinateSpec(
+                name="orig_field_record_num",
+                dimensions=("shot_line", "gun", "shot_index"),
+                dtype=ScalarType.UINT32,
+                source="header",
+                header_key="orig_field_record_num",
+            ),
+            CoordinateSpec(
+                name="source_coord_x",
+                dimensions=("shot_line", "gun", "shot_index"),
+                dtype=ScalarType.FLOAT64,
+                source="header",
+                header_key="source_coord_x",
+            ),
+            CoordinateSpec(
+                name="source_coord_y",
+                dimensions=("shot_line", "gun", "shot_index"),
+                dtype=ScalarType.FLOAT64,
+                source="header",
+                header_key="source_coord_y",
+            ),
+        )
 
     def _add_coordinates(self) -> None:
         # Add dimension coordinates
@@ -76,41 +131,72 @@ class Seismic3DObnReceiverGathersTemplate(AbstractDatasetTemplate):
             self._data_domain,
             dimensions=(self._data_domain,),
             data_type=ScalarType.INT32,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key(self._data_domain)),
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self._data_domain)),
         )
 
-        # Add non-dimension coordinates
+        # Add non-dimension coordinates with computed chunk sizes
+        # For 1D coordinates (over receiver)
+        coord_spatial_shape_1d = (self._dim_sizes[1],)  # receiver
+        coord_chunk_shape_1d = get_constrained_chunksize(
+            coord_spatial_shape_1d,
+            ScalarType.FLOAT64,
+            MAX_COORDINATES_BYTES,
+        )
+        chunk_grid_1d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape_1d))
+
+        # For 3D coordinates (over shot_line, gun, shot_index)
+        coord_spatial_shape_3d = (
+            self._dim_sizes[2],
+            self._dim_sizes[3],
+            self._dim_sizes[4],
+        )  # shot_line, gun, shot_index
+        coord_chunk_shape_3d = get_constrained_chunksize(
+            coord_spatial_shape_3d,
+            ScalarType.FLOAT64,
+            MAX_COORDINATES_BYTES,
+        )
+        chunk_grid_3d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape_3d))
+
+        compressor = Blosc(cname=BloscCname.zstd)
         self._builder.add_coordinate(
             "group_coord_x",
             dimensions=("receiver",),
             data_type=ScalarType.FLOAT64,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("group_coord_x")),
+            compressor=compressor,
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("group_coord_x"), chunk_grid=chunk_grid_1d),
         )
         self._builder.add_coordinate(
             "group_coord_y",
             dimensions=("receiver",),
             data_type=ScalarType.FLOAT64,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("group_coord_y")),
+            compressor=compressor,
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("group_coord_y"), chunk_grid=chunk_grid_1d),
         )
         self._builder.add_coordinate(
             "shot_point",
             dimensions=("shot_line", "gun", "shot_index"),
             data_type=ScalarType.UINT32,
+            compressor=compressor,
+            metadata=VariableMetadata(chunk_grid=chunk_grid_3d),
         )
         self._builder.add_coordinate(
             "orig_field_record_num",
             dimensions=("shot_line", "gun", "shot_index"),
             data_type=ScalarType.UINT32,
+            compressor=compressor,
+            metadata=VariableMetadata(chunk_grid=chunk_grid_3d),
         )
         self._builder.add_coordinate(
             "source_coord_x",
             dimensions=("shot_line", "gun", "shot_index"),
             data_type=ScalarType.FLOAT64,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("source_coord_x")),
+            compressor=compressor,
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("source_coord_x"), chunk_grid=chunk_grid_3d),
         )
         self._builder.add_coordinate(
             "source_coord_y",
             dimensions=("shot_line", "gun", "shot_index"),
             data_type=ScalarType.FLOAT64,
-            metadata=CoordinateMetadata(units_v1=self.get_unit_by_key("source_coord_y")),
+            compressor=compressor,
+            metadata=VariableMetadata(units_v1=self.get_unit_by_key("source_coord_y"), chunk_grid=chunk_grid_3d),
         )
