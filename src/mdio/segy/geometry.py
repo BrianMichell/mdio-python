@@ -75,7 +75,7 @@ class GridOverrides(BaseModel):
         return self.auto_channel_wrap or self.auto_shot_wrap or self.non_binned or self.has_duplicates
 
     @classmethod
-    def from_legacy_dict(cls, data: dict[str, Any]) -> "GridOverrides":
+    def from_legacy_dict(cls, data: dict[str, Any]) -> GridOverrides:
         """Build a :class:`GridOverrides` from a legacy v1.x ``dict`` configuration.
 
         Accepts both modern snake_case keys (``auto_shot_wrap``, ``non_binned`` ...)
@@ -87,9 +87,7 @@ class GridOverrides(BaseModel):
             return cls()
 
         modern_keys = set(cls.model_fields.keys())
-        alias_to_field = {
-            field.alias: name for name, field in cls.model_fields.items() if field.alias is not None
-        }
+        alias_to_field = {field.alias: name for name, field in cls.model_fields.items() if field.alias is not None}
         # v1.x keys that no longer have their own field.
         legacy_aliases = {
             "CalculateShotIndex": "auto_shot_wrap",

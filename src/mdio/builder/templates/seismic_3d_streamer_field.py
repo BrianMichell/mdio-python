@@ -12,6 +12,7 @@ from mdio.builder.templates.base import AbstractDatasetTemplate
 from mdio.builder.templates.types import SeismicDataDomain
 from mdio.core.utils_write import MAX_COORDINATES_BYTES
 from mdio.core.utils_write import get_constrained_chunksize
+from mdio.ingestion.schema_resolver import CoordinateSpec
 
 
 class Seismic3DStreamerFieldRecordsTemplate(AbstractDatasetTemplate):
@@ -44,9 +45,8 @@ class Seismic3DStreamerFieldRecordsTemplate(AbstractDatasetTemplate):
     def _load_dataset_attributes(self) -> dict[str, Any]:
         return {"surveyDimensionality": "3D", "gatherType": "common_source"}
 
-    def declare_coordinate_specs(self) -> tuple[Any, ...]:
-        from mdio.ingestion.schema_resolver import CoordinateSpec
-
+    def declare_coordinate_specs(self) -> tuple[CoordinateSpec, ...]:
+        """Declare shot- and receiver-indexed coordinates for the 3D streamer field records template."""
         shot_dims = ("sail_line", "gun", "shot_index")
         receiver_dims = ("sail_line", "gun", "shot_index", "cable", "channel")
         return (
@@ -91,9 +91,7 @@ class Seismic3DStreamerFieldRecordsTemplate(AbstractDatasetTemplate):
         # Chunk grids for shot-indexed (3D) and receiver-indexed (5D) non-dim coordinates.
         shot_chunk_shape = get_constrained_chunksize(self._dim_sizes[:3], ScalarType.FLOAT64, MAX_COORDINATES_BYTES)
         chunk_grid_3d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=shot_chunk_shape))
-        receiver_chunk_shape = get_constrained_chunksize(
-            self._dim_sizes[:5], ScalarType.FLOAT64, MAX_COORDINATES_BYTES
-        )
+        receiver_chunk_shape = get_constrained_chunksize(self._dim_sizes[:5], ScalarType.FLOAT64, MAX_COORDINATES_BYTES)
         chunk_grid_5d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=receiver_chunk_shape))
 
         compressor = Blosc(cname=BloscCname.zstd)

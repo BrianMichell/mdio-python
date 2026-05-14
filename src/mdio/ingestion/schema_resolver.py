@@ -178,9 +178,7 @@ class SchemaResolver:
                 new_chunk_shape.append(chunk_shape[i])
             else:
                 if replaced_count > 0:
-                    new_dimensions.append(
-                        DimensionSpec(name="trace", is_spatial=True, is_calculated=True).model_dump()
-                    )
+                    new_dimensions.append(DimensionSpec(name="trace", is_spatial=True, is_calculated=True).model_dump())
                     new_chunk_shape.append(grid_overrides.chunksize)
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
@@ -219,9 +217,7 @@ class SchemaResolver:
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
             else:
-                new_dimensions.append(
-                    DimensionSpec(name="trace", is_spatial=True, is_calculated=True).model_dump()
-                )
+                new_dimensions.append(DimensionSpec(name="trace", is_spatial=True, is_calculated=True).model_dump())
                 new_chunk_shape.append(1)
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
@@ -230,4 +226,3 @@ class SchemaResolver:
         schema_dict["chunk_shape"] = tuple(new_chunk_shape)
 
         return schema_dict
-

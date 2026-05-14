@@ -20,11 +20,11 @@ from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.core.utils_write import MAX_COORDINATES_BYTES
 from mdio.core.utils_write import MAX_SIZE_LIVE_MASK
 from mdio.core.utils_write import get_constrained_chunksize
+from mdio.ingestion.schema_resolver import CoordinateSpec
 
 if TYPE_CHECKING:
     from mdio.builder.schemas.v1.dataset import Dataset
     from mdio.builder.templates.types import SeismicDataDomain
-    from mdio.ingestion.schema_resolver import CoordinateSpec
 
 
 class AbstractDatasetTemplate(ABC):
@@ -73,8 +73,6 @@ class AbstractDatasetTemplate(ABC):
 
     def declare_coordinate_specs(self) -> tuple[CoordinateSpec, ...]:
         """Return the non-dimension coordinate specs (name, dims, dtype) for this template."""
-        from mdio.ingestion.schema_resolver import CoordinateSpec
-
         specs = [
             CoordinateSpec(
                 name=coord_name,
@@ -98,7 +96,6 @@ class AbstractDatasetTemplate(ABC):
         name: str,
         sizes: tuple[int, ...],
         header_dtype: StructuredType = None,
-        include_raw_headers: bool = False,
     ) -> Dataset:
         """Template method that builds the dataset.
 
@@ -106,8 +103,6 @@ class AbstractDatasetTemplate(ABC):
             name: The name of the dataset.
             sizes: The sizes of the dimensions.
             header_dtype: Optional structured headers for the dataset.
-            include_raw_headers: Whether to include raw binary headers variable. Only supported
-                in Zarr v3 format. Defaults to False.
 
         Returns:
             Dataset: The constructed dataset
@@ -124,9 +119,6 @@ class AbstractDatasetTemplate(ABC):
 
         if header_dtype is not None:
             self._add_trace_headers(header_dtype)
-
-        if include_raw_headers:
-            self._add_raw_headers()
 
         return self._builder.build()
 

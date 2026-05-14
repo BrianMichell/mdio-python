@@ -335,9 +335,7 @@ class TestCompositeStrategy:
                 "channel": np.array([1, 2, 1, 2], dtype=np.int32),
             }
         )
-        composite = CompositeStrategy(
-            [ComponentSynthesisStrategy(("component",)), NonBinnedStrategy(chunksize=4)]
-        )
+        composite = CompositeStrategy([ComponentSynthesisStrategy(("component",)), NonBinnedStrategy(chunksize=4)])
         out = composite.transform_headers(headers)
         assert "component" in out.dtype.names
         assert "trace" in out.dtype.names

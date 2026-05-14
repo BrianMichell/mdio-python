@@ -29,7 +29,6 @@ class DatasetFactory:
         schema: ResolvedSchema,
         dimensions: list[Dimension],
         header_dtype: StructuredType | None = None,
-        include_raw_headers: bool = False,
     ) -> Dataset:
         """Build MDIO dataset from schema and dimensions.
 
@@ -38,7 +37,6 @@ class DatasetFactory:
             schema: Resolved schema specifying dataset structure
             dimensions: List of dimension objects with coordinates
             header_dtype: Optional structured type for trace headers
-            include_raw_headers: Whether to include raw binary headers (Zarr v3 only)
 
         Returns:
             Complete Dataset ready for xarray conversion
@@ -51,5 +49,4 @@ class DatasetFactory:
             name=schema.name,
             sizes=sizes,
             header_dtype=header_dtype,
-            include_raw_headers=include_raw_headers,
         )

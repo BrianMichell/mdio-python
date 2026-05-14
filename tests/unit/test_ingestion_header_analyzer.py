@@ -35,6 +35,4 @@ class TestRequirementsFromSchema:
         schema = SchemaResolver().resolve(template)
         req = HeaderAnalyzer.requirements_from_schema(schema)
         # CDP coords + dims + always-present coordinate_scalar.
-        assert {"inline", "crossline", "offset", "cdp_x", "cdp_y", "coordinate_scalar"}.issubset(
-            req.required_fields
-        )
+        assert {"inline", "crossline", "offset", "cdp_x", "cdp_y", "coordinate_scalar"}.issubset(req.required_fields)

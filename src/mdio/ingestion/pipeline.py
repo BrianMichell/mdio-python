@@ -17,7 +17,7 @@ from mdio.converters.type_converter import to_structured_type
 from mdio.core.config import MDIOSettings
 from mdio.core.dimension import Dimension
 from mdio.core.grid import Grid
-from mdio.ingestion._raw_headers_experimental import should_include_raw_headers
+from mdio.ingestion._raw_headers_experimental import maybe_add_raw_headers
 from mdio.ingestion.coordinate_utils import apply_runtime_units
 from mdio.ingestion.coordinate_utils import get_coordinates
 from mdio.ingestion.coordinate_utils import populate_dim_coordinates
@@ -73,7 +73,10 @@ def run_segy_ingestion(  # noqa PLR0913
 
     Raises:
         FileExistsError: If the output location already exists and overwrite is False.
-        ValueError: If required fields are missing from segy_spec.
+        ValueError: If required fields are missing from segy_spec or required computed
+            dimensions are not produced after grid overrides are applied.
+        GridTraceCountError: If the live trace count in the built grid does not match
+            the number of traces reported by the SEG-Y file.
     """
     settings = MDIOSettings()
 
@@ -133,9 +136,7 @@ def run_segy_ingestion(  # noqa PLR0913
     # are missing here, fail with a clear message instead of an opaque downstream KeyError.
     produced_dim_names = {d.name for d in dimensions}
     missing_computed = [
-        d.name
-        for d in schema.dimensions
-        if d.is_spatial and d.is_calculated and d.name not in produced_dim_names
+        d.name for d in schema.dimensions if d.is_spatial and d.is_calculated and d.name not in produced_dim_names
     ]
     if missing_computed:
         err = (
@@ -172,8 +173,8 @@ def run_segy_ingestion(  # noqa PLR0913
         schema=schema,
         dimensions=dimensions,
         header_dtype=header_dtype,
-        include_raw_headers=should_include_raw_headers(),
     )
+    mdio_ds = maybe_add_raw_headers(mdio_template, mdio_ds)
 
     grid_overrides_dict = None
     if grid_overrides is not None:

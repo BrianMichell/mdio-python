@@ -11,6 +11,7 @@ from mdio.builder.templates.base import AbstractDatasetTemplate
 from mdio.builder.templates.types import SeismicDataDomain
 from mdio.core.utils_write import MAX_COORDINATES_BYTES
 from mdio.core.utils_write import get_constrained_chunksize
+from mdio.ingestion.schema_resolver import CoordinateSpec
 
 
 class Seismic3DCocaGathersTemplate(AbstractDatasetTemplate):
@@ -30,9 +31,8 @@ class Seismic3DCocaGathersTemplate(AbstractDatasetTemplate):
     def _load_dataset_attributes(self) -> dict[str, Any]:
         return {"surveyType": "3D", "gatherType": "common_offset_common_azimuth"}
 
-    def declare_coordinate_specs(self) -> tuple[Any, ...]:
-        from mdio.ingestion.schema_resolver import CoordinateSpec
-
+    def declare_coordinate_specs(self) -> tuple[CoordinateSpec, ...]:
+        """Declare inline/crossline-indexed X/Y coordinates for the 3D CoCA gathers template."""
         return (
             CoordinateSpec(name="cdp_x", dimensions=("inline", "crossline"), dtype=ScalarType.FLOAT64),
             CoordinateSpec(name="cdp_y", dimensions=("inline", "crossline"), dtype=ScalarType.FLOAT64),

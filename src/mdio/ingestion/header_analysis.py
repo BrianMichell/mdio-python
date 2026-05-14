@@ -88,8 +88,7 @@ def analyze_streamer_headers(
                 geom_type = StreamerShotGeometryType.A
                 logger.info("Found overlapping channels, assuming streamer type A")
                 overlap_info = (
-                    "Cable %s index %s with channel range %s overlaps cable %s index %s with "
-                    "channel range %s."
+                    "Cable %s index %s with channel range %s overlaps cable %s index %s with channel range %s."
                 )
                 logger.info(overlap_info, cable1, idx1, cable1_range, cable2, idx2, cable2_range)
                 return unique_cables, cable_chan_min, cable_chan_max, geom_type

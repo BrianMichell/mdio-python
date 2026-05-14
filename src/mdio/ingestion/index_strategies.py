@@ -226,9 +226,7 @@ class ShotWrappingStrategy(IndexStrategy):
 
     def transform_headers(self, headers: HeaderArray) -> HeaderArray:
         """Create ``shot_index`` for multi-gun acquisition."""
-        unique_lines, unique_guns_per_line, geom_type = analyze_lines_for_guns(
-            headers, line_field=self.line_field
-        )
+        unique_lines, unique_guns_per_line, geom_type = analyze_lines_for_guns(headers, line_field=self.line_field)
 
         logger.info("Ingesting dataset as shot type: %s (line_field=%s)", geom_type.name, self.line_field)
 
@@ -369,9 +367,7 @@ class IndexStrategyRegistry:
 
             if grid_overrides.auto_shot_wrap:
                 line_field, always_calculate = self._resolve_shot_wrap_params(template)
-                strategies.append(
-                    ShotWrappingStrategy(line_field=line_field, always_calculate=always_calculate)
-                )
+                strategies.append(ShotWrappingStrategy(line_field=line_field, always_calculate=always_calculate))
 
             # NonBinned and HasDuplicates are mutually exclusive.
             if grid_overrides.non_binned:
