@@ -1,8 +1,4 @@
-"""Validation utilities for MDIO ingestion.
-
-This module contains validation functions for SEG-Y to MDIO conversion,
-including grid density checks and spec validation.
-"""
+"""Validation utilities for MDIO ingestion."""
 
 from __future__ import annotations
 
@@ -44,27 +40,19 @@ def grid_density_qc(grid: Grid, num_traces: int) -> None:
             and `MDIO_IGNORE_CHECKS` is not set to a truthy value (e.g., "1", "true").
     """
     settings = MDIOSettings()
-    # Calculate total possible traces in the grid (excluding sample dimension)
     grid_traces = np.prod(grid.shape[:-1], dtype=np.uint64)
-
-    # Handle division by zero if num_traces is 0
     sparsity_ratio = float("inf") if num_traces == 0 else grid_traces / num_traces
 
-    # Fetch and validate environment variables
     warning_ratio = settings.grid_sparsity_ratio_warn
     error_ratio = settings.grid_sparsity_ratio_limit
     ignore_checks = settings.ignore_checks
 
-    # Check sparsity
     should_warn = sparsity_ratio > warning_ratio
     should_error = sparsity_ratio > error_ratio and not ignore_checks
 
-    # Early return if everything is OK
-    # Prepare message for warning or error
     if not should_warn and not should_error:
         return
 
-    # Build warning / error message
     dims = dict(zip(grid.dim_names, grid.shape, strict=True))
     msg = (
         f"Ingestion grid is sparse. Sparsity ratio: {sparsity_ratio:.2f}. "
@@ -72,15 +60,11 @@ def grid_density_qc(grid: Grid, num_traces: int) -> None:
         f"SEG-Y trace count: {num_traces}, grid trace count: {grid_traces}."
     )
     for dim_name in grid.dim_names:
-        dim_min = grid.get_min(dim_name)
-        dim_max = grid.get_max(dim_name)
-        msg += f"\n{dim_name} min: {dim_min} max: {dim_max}"
+        msg += f"\n{dim_name} min: {grid.get_min(dim_name)} max: {grid.get_max(dim_name)}"
 
-    # Log warning if sparsity exceeds warning threshold
     if should_warn:
         logger.warning(msg)
 
-    # Raise error if sparsity exceeds error threshold and checks are not ignored
     if should_error:
         raise GridTraceSparsityError(grid.shape, num_traces, msg)
 
@@ -90,14 +74,12 @@ def validate_spec_in_template(segy_spec: SegySpec, mdio_template: AbstractDatase
     header_fields = {field.name for field in segy_spec.trace.header.fields}
 
     required_fields = set(mdio_template.spatial_dimension_names) | set(mdio_template.coordinate_names)
-    required_fields = required_fields - set(mdio_template.calculated_dimension_names)  # remove to be calculated
+    required_fields -= set(mdio_template.calculated_dimension_names)
 
-    # Handle missing dims that will be synthesized
-    if hasattr(mdio_template, "synthesize_missing_dims"):
-        for dim in mdio_template.synthesize_missing_dims:
-            required_fields.discard(dim)
+    for dim in getattr(mdio_template, "synthesize_missing_dims", ()):
+        required_fields.discard(dim)
 
-    required_fields = required_fields | {"coordinate_scalar"}  # ensure coordinate scalar is always present
+    required_fields.add("coordinate_scalar")
     missing_fields = required_fields - header_fields
 
     if missing_fields:

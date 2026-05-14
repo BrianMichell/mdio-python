@@ -17,7 +17,6 @@ from mdio.builder.schemas.dtype import ScalarType
 from mdio.builder.schemas.dtype import StructuredType
 from mdio.builder.schemas.v1.units import AllUnitModel
 from mdio.builder.schemas.v1.variable import VariableMetadata
-from mdio.builder.schemas.v1.variable import VariableMetadata
 from mdio.core.utils_write import MAX_COORDINATES_BYTES
 from mdio.core.utils_write import MAX_SIZE_LIVE_MASK
 from mdio.core.utils_write import get_constrained_chunksize
@@ -144,6 +143,30 @@ class AbstractDatasetTemplate(ABC):
                 raise ValueError(msg)
         self._units |= units
 
+    def apply_resolved_dimensions(
+        self,
+        dim_names: tuple[str, ...],
+        chunk_shape: tuple[int, ...],
+    ) -> None:
+        """Update the template's dimension layout from a resolved schema.
+
+        Supported entry point for the ingestion pipeline to push back dimension names
+        and chunk shape after the SchemaResolver has applied grid overrides
+        (e.g. NonBinned, HasDuplicates), instead of mutating private attributes.
+
+        Args:
+            dim_names: Final ordered dimension names.
+            chunk_shape: Chunk shape matching ``dim_names`` length.
+
+        Raises:
+            ValueError: If ``len(chunk_shape) != len(dim_names)``.
+        """
+        if len(chunk_shape) != len(dim_names):
+            msg = f"chunk_shape length {len(chunk_shape)} does not match dim_names length {len(dim_names)}"
+            raise ValueError(msg)
+        self._dim_names = tuple(dim_names)
+        self._var_chunk_shape = tuple(chunk_shape)
+
     @property
     def name(self) -> str:
         """Returns the name of the template."""
@@ -191,12 +214,10 @@ class AbstractDatasetTemplate(ABC):
 
     @property
     def full_chunk_shape(self) -> tuple[int, ...]:
-        """Returns the chunk shape for the variables."""
-        # If dimension sizes are not set yet, return the stored shape as-is
+        """Returns the chunk shape for the variables, expanding -1 to the full dim size."""
         if len(self._dim_sizes) != len(self._dim_names):
             return self._var_chunk_shape
 
-        # Expand -1 values to full dimension sizes
         return tuple(
             dim_size if chunk_size == -1 else chunk_size
             for chunk_size, dim_size in zip(self._var_chunk_shape, self._dim_sizes, strict=False)
@@ -204,12 +225,11 @@ class AbstractDatasetTemplate(ABC):
 
     @full_chunk_shape.setter
     def full_chunk_shape(self, shape: tuple[int, ...]) -> None:
-        """Sets the chunk shape for the variables."""
+        """Sets the chunk shape; values must be positive ints or -1 (means full dim size)."""
         if len(shape) != len(self._dim_names):
             msg = f"Chunk shape {shape} has {len(shape)} dimensions, expected {len(self._dim_names)}"
             raise ValueError(msg)
 
-        # Validate that all values are positive integers or -1
         for chunk_size in shape:
             if chunk_size != -1 and chunk_size <= 0:
                 msg = f"Chunk size must be positive integer or -1, got {chunk_size}"

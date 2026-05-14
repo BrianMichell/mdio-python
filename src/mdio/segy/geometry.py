@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import field_validator
 
 
 class GridOverrides(BaseModel):
@@ -71,14 +70,45 @@ class GridOverrides(BaseModel):
     )
     extra_params: dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
 
-    @field_validator("chunksize")
-    @classmethod
-    def validate_chunksize(cls, v: int | None) -> int | None:
-        """Validate that chunksize is positive if provided."""
-        if v is not None and v <= 0:
-            raise ValueError("chunksize must be positive")
-        return v
-
     def __bool__(self) -> bool:
         """Return True if any override is enabled."""
         return self.auto_channel_wrap or self.auto_shot_wrap or self.non_binned or self.has_duplicates
+
+    @classmethod
+    def from_legacy_dict(cls, data: dict[str, Any]) -> "GridOverrides":
+        """Build a :class:`GridOverrides` from a legacy v1.x ``dict`` configuration.
+
+        Accepts both modern snake_case keys (``auto_shot_wrap``, ``non_binned`` ...)
+        and legacy CamelCase keys including the now-collapsed
+        ``CalculateShotIndex`` (mapped to ``auto_shot_wrap`` since the strategy is now
+        template-aware). Any unknown keys are routed into :attr:`extra_params`.
+        """
+        if not data:
+            return cls()
+
+        modern_keys = set(cls.model_fields.keys())
+        alias_to_field = {
+            field.alias: name for name, field in cls.model_fields.items() if field.alias is not None
+        }
+        # v1.x keys that no longer have their own field.
+        legacy_aliases = {
+            "CalculateShotIndex": "auto_shot_wrap",
+            "non_binned_dims": "replace_dims",
+        }
+
+        translated: dict[str, Any] = {}
+        extra: dict[str, Any] = {}
+        for key, value in data.items():
+            if key in modern_keys:
+                translated[key] = value
+            elif key in alias_to_field:
+                translated[alias_to_field[key]] = value
+            elif key in legacy_aliases:
+                translated[legacy_aliases[key]] = value
+            else:
+                extra[key] = value
+
+        if extra:
+            translated.setdefault("extra_params", {}).update(extra)
+
+        return cls(**translated)

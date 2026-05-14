@@ -88,21 +88,10 @@ class ResolvedSchema(BaseModel):
 
     def required_header_fields(self) -> set[str]:
         """Get all header fields required for this schema."""
-        fields = set()
-
-        # Add dimension header keys
-        for dim in self.dimensions:
-            if dim.header_key is not None:
-                fields.add(dim.header_key)
-
-        # Add coordinate header keys
-        for coord in self.coordinates:
-            if coord.header_key is not None:
-                fields.add(coord.header_key)
-
-        # Always need coordinate_scalar for X/Y coordinates
+        fields = {dim.header_key for dim in self.dimensions if dim.header_key is not None}
+        fields.update(coord.header_key for coord in self.coordinates if coord.header_key is not None)
+        # coordinate_scalar is always needed to scale X/Y coordinates.
         fields.add("coordinate_scalar")
-
         return fields
 
     def spatial_dimensions(self) -> list[DimensionSpec]:
@@ -136,53 +125,36 @@ class SchemaResolver:
         Returns:
             ResolvedSchema with all dimensions, coordinates, and metadata resolved
         """
-        # Start with base schema from template
         schema = self._template_to_schema(template)
 
-        # Apply grid override transformations if present
-        if grid_overrides and grid_overrides:  # Check __bool__
+        if grid_overrides:
             schema = self._apply_override_transformations(schema, grid_overrides)
 
         return schema
 
     def _template_to_schema(self, template: AbstractDatasetTemplate) -> ResolvedSchema:
         """Convert a template to a resolved schema without overrides."""
-        # Extract dimensions from template
         dimensions = []
-        spatial_dims = template.spatial_dimension_names
-        vertical_dim = template.dimension_names[-1]
-
-        for dim_name in spatial_dims:
-            # Determine if this is computed (like shot_index)
+        for dim_name in template.spatial_dimension_names:
             is_computed = dim_name in template.calculated_dimension_names
-            source = "computed" if is_computed else "header"
-
             dimensions.append(
                 DimensionSpec(
                     name=dim_name,
-                    source=source,
-                    header_key=dim_name,  # Usually same as name
+                    source="computed" if is_computed else "header",
+                    header_key=dim_name,
                     is_spatial=True,
                 )
             )
 
-        # Add vertical dimension (time/depth)
+        vertical_dim = template.dimension_names[-1]
         dimensions.append(
-            DimensionSpec(
-                name=vertical_dim,
-                source="synthetic",
-                header_key=None,
-                is_spatial=False,
-            )
+            DimensionSpec(name=vertical_dim, source="synthetic", header_key=None, is_spatial=False)
         )
-
-        # Extract coordinates from template
-        coordinates = list(template.declare_coordinate_specs())
 
         return ResolvedSchema(
             name=template.name,
             dimensions=dimensions,
-            coordinates=coordinates,
+            coordinates=list(template.declare_coordinate_specs()),
             chunk_shape=template.full_chunk_shape,
             metadata=template._load_dataset_attributes() or {},
             default_variable_name=template.default_variable_name,
@@ -193,27 +165,14 @@ class SchemaResolver:
         schema: ResolvedSchema,
         grid_overrides: GridOverrides,
     ) -> ResolvedSchema:
-        """Apply grid override transformations to the schema.
-
-        Args:
-            schema: Base schema from template
-            grid_overrides: Grid overrides to apply
-
-        Returns:
-            Transformed schema
-        """
-        # Clone schema for modification
+        """Apply grid override transformations to the schema."""
         schema_dict = schema.model_dump()
 
-        # Apply NonBinned transformation
         if grid_overrides.non_binned:
             schema_dict = self._apply_non_binned_transform(schema_dict, grid_overrides)
-
-        # Apply HasDuplicates transformation
         elif grid_overrides.has_duplicates:
             schema_dict = self._apply_duplicate_transform(schema_dict)
 
-        # Update metadata with grid overrides
         schema_dict["metadata"]["gridOverrides"] = (
             grid_overrides.model_dump(by_alias=True, exclude_defaults=True, exclude={"extra_params"})
             | grid_overrides.extra_params
@@ -226,24 +185,16 @@ class SchemaResolver:
         schema_dict: dict,
         grid_overrides: GridOverrides,
     ) -> dict:
-        """Transform schema for non-binned indexing.
-
-        Replaces specified dimensions with a single "trace" dimension.
-        """
+        """Replace selected spatial dimensions with a single ``trace`` dimension."""
         dimensions = schema_dict["dimensions"]
         chunk_shape = list(schema_dict["chunk_shape"])
 
-        # Determine which dimensions to replace
         replace_dims = grid_overrides.replace_dims
         if replace_dims is None:
-            # Default: replace all spatial dims except the first
+            # Default: replace all spatial dims except the first.
             spatial_dims = [d for d in dimensions if d["is_spatial"]]
-            if len(spatial_dims) > 1:
-                replace_dims = [d["name"] for d in spatial_dims[1:]]
-            else:
-                replace_dims = []
+            replace_dims = [d["name"] for d in spatial_dims[1:]] if len(spatial_dims) > 1 else []
 
-        # Build new dimension list
         new_dimensions = []
         new_chunk_shape = []
         replaced_count = 0
@@ -251,43 +202,32 @@ class SchemaResolver:
         for i, dim in enumerate(dimensions):
             if dim["name"] in replace_dims:
                 replaced_count += 1
-                # Skip this dimension (will be replaced)
                 continue
             if dim["is_spatial"]:
-                # Keep this spatial dimension
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
             else:
-                # This is the vertical dimension, add trace before it
                 if replaced_count > 0:
                     new_dimensions.append(
                         DimensionSpec(
-                            name="trace",
-                            source="computed",
-                            header_key=None,
-                            is_spatial=True,
+                            name="trace", source="computed", header_key=None, is_spatial=True
                         ).model_dump()
                     )
                     new_chunk_shape.append(grid_overrides.chunksize)
-
-                # Then add vertical dimension
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
 
         schema_dict["dimensions"] = new_dimensions
         schema_dict["chunk_shape"] = tuple(new_chunk_shape)
 
-        # Update coordinate dimensions to remove references to collapsed dimensions
+        # Rewrite coordinate dimension references: collapsed dims drop out, replaced by ``trace``.
         replaced_dims_set = set(replace_dims)
         updated_coordinates = []
         for coord in schema_dict["coordinates"]:
             original_dims = coord["dimensions"]
-            # Check if this coordinate referenced any collapsed dimensions
             had_collapsed_dims = any(d in replaced_dims_set for d in original_dims)
-            # Filter out collapsed dimensions
-            coord_dims = list(d for d in original_dims if d not in replaced_dims_set)
+            coord_dims = [d for d in original_dims if d not in replaced_dims_set]
 
-            # If we removed any dimensions and trace was added, append trace
             if had_collapsed_dims and replaced_count > 0:
                 coord_dims.append("trace")
 
@@ -299,14 +239,10 @@ class SchemaResolver:
         return schema_dict
 
     def _apply_duplicate_transform(self, schema_dict: dict) -> dict:
-        """Transform schema for duplicate index handling.
-
-        Adds a "trace" dimension with chunksize=1.
-        """
+        """Insert a ``trace`` dimension with chunksize 1 before the vertical dimension."""
         dimensions = schema_dict["dimensions"]
         chunk_shape = list(schema_dict["chunk_shape"])
 
-        # Insert trace dimension before vertical (last) dimension
         new_dimensions = []
         new_chunk_shape = []
 
@@ -315,18 +251,12 @@ class SchemaResolver:
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
             else:
-                # Add trace dimension before vertical
                 new_dimensions.append(
                     DimensionSpec(
-                        name="trace",
-                        source="computed",
-                        header_key=None,
-                        is_spatial=True,
+                        name="trace", source="computed", header_key=None, is_spatial=True
                     ).model_dump()
                 )
                 new_chunk_shape.append(1)
-
-                # Then add vertical dimension
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk_shape[i])
 

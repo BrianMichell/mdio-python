@@ -1,9 +1,4 @@
-"""Index Strategy System for MDIO Ingestion.
-
-This module implements the strategy pattern for transforming SEG-Y headers
-into indexable dimensions. Each strategy handles a specific type of grid
-override or indexing pattern.
-"""
+"""Index strategies for transforming SEG-Y headers into indexable dimensions."""
 
 from __future__ import annotations
 
@@ -16,15 +11,17 @@ import numpy as np
 from numpy.lib import recfunctions as rfn
 
 from mdio.core import Dimension
+from mdio.ingestion.header_analysis import ShotGunGeometryType
 from mdio.ingestion.header_analysis import StreamerShotGeometryType
+from mdio.ingestion.header_analysis import analyze_lines_for_guns
 from mdio.ingestion.header_analysis import analyze_non_indexed_headers
-from mdio.ingestion.header_analysis import analyze_saillines_for_guns
 from mdio.ingestion.header_analysis import analyze_streamer_headers
 
 if TYPE_CHECKING:
     from numpy.typing import DTypeLike
     from segy.arrays import HeaderArray
 
+    from mdio.builder.templates.base import AbstractDatasetTemplate
     from mdio.segy.geometry import GridOverrides
 
 logger = logging.getLogger(__name__)
@@ -109,48 +106,32 @@ class NonBinnedStrategy(IndexStrategy):
         self.collapse_dims = collapse_dims or []
 
     def transform_headers(self, headers: HeaderArray) -> HeaderArray:
-        """Add sequential trace index to headers.
-
-        For non-binned data, traces are simply numbered sequentially 0, 1, 2, ...
-        This is different from DuplicateHandling which uses hierarchical indexing.
-        """
-        # Add simple sequential trace index
+        """Append a sequential ``trace`` field (0, 1, 2, ...) to the headers."""
         trace_idx = np.arange(len(headers), dtype=np.int32)
         return rfn.append_fields(headers, "trace", trace_idx, usemask=False)
 
     def compute_dimensions(self, headers: HeaderArray, dim_names: tuple[str, ...]) -> list[Dimension]:
-        """Compute dimensions with trace replacing collapsed dims."""
-        dimensions = []
-
-        # If collapse_dims not specified, collapse all but first spatial dim
+        """Compute dimensions with ``trace`` replacing collapsed dims."""
         if not self.collapse_dims:
-            # Get all dims that are in headers (these are spatial, vertical is synthetic)
             spatial_dims = [d for d in dim_names if d in headers.dtype.names]
-            # Collapse all but the first spatial dimension
             if len(spatial_dims) > 1:
                 self.collapse_dims = spatial_dims[1:]
 
-        # Track if we've added trace dimension
+        dimensions: list[Dimension] = []
         trace_added = False
 
         for dim_name in dim_names:
-            # Skip collapsed dimensions
             if dim_name in self.collapse_dims:
-                # Add trace dimension only once when we encounter first collapsed dim
                 if not trace_added and "trace" in headers.dtype.names:
-                    coords = np.unique(headers["trace"])
-                    dimensions.append(Dimension(coords=coords, name="trace"))
+                    dimensions.append(Dimension(coords=np.unique(headers["trace"]), name="trace"))
                     trace_added = True
                 continue
 
-            # Handle trace dimension specially if explicitly in dim_names
             if dim_name == "trace" and not trace_added:
-                coords = np.unique(headers["trace"])
-                dimensions.append(Dimension(coords=coords, name="trace"))
+                dimensions.append(Dimension(coords=np.unique(headers["trace"]), name="trace"))
                 trace_added = True
             elif dim_name in headers.dtype.names:
-                coords = np.unique(headers[dim_name])
-                dimensions.append(Dimension(coords=coords, name=dim_name))
+                dimensions.append(Dimension(coords=np.unique(headers[dim_name]), name=dim_name))
 
         return dimensions
 
@@ -195,20 +176,16 @@ class ChannelWrappingStrategy(IndexStrategy):
 
     def transform_headers(self, headers: HeaderArray) -> HeaderArray:
         """Adjust channel numbers based on geometry type."""
-        result = analyze_streamer_headers(headers)
-        unique_cables, cable_chan_min, cable_chan_max, geom_type = result
+        unique_cables, cable_chan_min, cable_chan_max, geom_type = analyze_streamer_headers(headers)
 
         logger.info("Ingesting dataset as %s", geom_type.name)
-
         for cable, chan_min, chan_max in zip(unique_cables, cable_chan_min, cable_chan_max, strict=True):
             logger.info("Cable: %s has min chan: %s and max chan: %s", cable, chan_min, chan_max)
 
-        # Transform Type B to Type A
         if geom_type == StreamerShotGeometryType.B:
             for idx, cable in enumerate(unique_cables):
                 cable_idxs = np.where(headers["cable"][:] == cable)
-                cc_min = cable_chan_min[idx]
-                headers["channel"][cable_idxs] = headers["channel"][cable_idxs] - cc_min + 1
+                headers["channel"][cable_idxs] = headers["channel"][cable_idxs] - cable_chan_min[idx] + 1
 
         return headers
 
@@ -227,38 +204,68 @@ class ChannelWrappingStrategy(IndexStrategy):
 class ShotWrappingStrategy(IndexStrategy):
     """Handle multi-gun acquisition shot wrapping.
 
-    Creates shot_index from shot_point for Type B geometry where
-    shot points are numbered uniquely across guns.
+    Creates ``shot_index`` from ``shot_point`` for multi-gun acquisitions. The line
+    field (``sail_line`` for streamer field records, ``shot_line`` for OBN, etc.) and
+    whether ``shot_index`` must always be created (vs. only for Type B / interleaved
+    geometries) are template-driven.
+
+    Args:
+        line_field: Name of the line header used to group shots (``sail_line`` or
+            ``shot_line``). Defaults to ``sail_line`` to match streamer field records.
+        always_calculate: When ``True`` (used by templates that declare ``shot_index``
+            as a calculated dimension, e.g. OBN), ``shot_index`` is always emitted using
+            either the Type B division-by-num_guns rule or, for Type A, a 0-based
+            ``np.searchsorted`` over the sorted unique shot points per line. When
+            ``False`` (default streamer behavior), ``shot_index`` is only emitted for
+            Type B geometries.
     """
 
-    def transform_headers(self, headers: HeaderArray) -> HeaderArray:
-        """Create shot_index for multi-gun acquisition."""
-        result = analyze_saillines_for_guns(headers)
-        unique_sail_lines, unique_guns_in_sail_line, geom_type = result
+    def __init__(self, line_field: str = "sail_line", always_calculate: bool = False) -> None:
+        self.line_field = line_field
+        self.always_calculate = always_calculate
 
-        logger.info("Ingesting dataset as shot type: %s", geom_type.name)
+    def transform_headers(self, headers: HeaderArray) -> HeaderArray:
+        """Create ``shot_index`` for multi-gun acquisition."""
+        unique_lines, unique_guns_per_line, geom_type = analyze_lines_for_guns(
+            headers, line_field=self.line_field
+        )
+
+        logger.info("Ingesting dataset as shot type: %s (line_field=%s)", geom_type.name, self.line_field)
 
         max_num_guns = 1
-        for sail_line in unique_sail_lines:
-            logger.info("sail_line: %s has guns: %s", sail_line, unique_guns_in_sail_line[str(sail_line)])
-            num_guns = len(unique_guns_in_sail_line[str(sail_line)])
-            max_num_guns = max(num_guns, max_num_guns)
+        for line_val in unique_lines:
+            guns = unique_guns_per_line[str(line_val)]
+            logger.info("%s: %s has guns: %s", self.line_field, line_val, guns)
+            max_num_guns = max(len(guns), max_num_guns)
 
-        # Transform Type B to add shot_index
-        if geom_type.name == "B":
-            shot_index = np.empty(len(headers), dtype="uint32")
-            headers = rfn.append_fields(headers.base, "shot_index", shot_index)
+        # Skip the entire transform when there is nothing to do for this geometry
+        # (Type A streamer case where caller did not opt-in to always_calculate).
+        if geom_type == ShotGunGeometryType.A and not self.always_calculate:
+            return headers
 
-            for sail_line in unique_sail_lines:
-                sail_line_idxs = np.where(headers["sail_line"][:] == sail_line)
-                headers["shot_index"][sail_line_idxs] = np.floor(headers["shot_point"][sail_line_idxs] / max_num_guns)
-                # Make shot index zero-based PER sail line
-                headers["shot_index"][sail_line_idxs] -= headers["shot_index"][sail_line_idxs].min()
+        shot_index = np.empty(len(headers), dtype="uint32")
+        base_array = headers.base if headers.base is not None else headers
+        headers = rfn.append_fields(base_array, "shot_index", shot_index, usemask=False)
+
+        if geom_type == ShotGunGeometryType.B:
+            # Interleaved across guns: divide shot_point by max_num_guns then zero-base per line.
+            for line_val in unique_lines:
+                line_idxs = np.where(headers[self.line_field][:] == line_val)
+                headers["shot_index"][line_idxs] = np.floor(headers["shot_point"][line_idxs] / max_num_guns)
+                headers["shot_index"][line_idxs] -= headers["shot_index"][line_idxs].min()
+        else:
+            # Type A always-calculate: shot points already unique per gun, build a dense
+            # 0-based index from the sorted unique shot_point values per line.
+            for line_val in unique_lines:
+                line_idxs = np.where(headers[self.line_field][:] == line_val)
+                shot_points = headers["shot_point"][line_idxs]
+                unique_shots = np.unique(shot_points)
+                headers["shot_index"][line_idxs] = np.searchsorted(unique_shots, shot_points)
 
         return headers
 
     def compute_dimensions(self, headers: HeaderArray, dim_names: tuple[str, ...]) -> list[Dimension]:
-        """Compute dimensions including shot_index if created."""
+        """Compute dimensions including ``shot_index`` if created."""
         dimensions = []
 
         for dim_name in dim_names:
@@ -289,7 +296,9 @@ class ComponentSynthesisStrategy(IndexStrategy):
             if dim not in headers.dtype.names:
                 logger.warning("Synthesizing missing '%s' dimension with constant value 1", dim)
                 comp_array = np.ones(len(headers), dtype=np.uint8)
-                headers = rfn.append_fields(headers.base, dim, comp_array, usemask=False)
+                # `.base` is None for non-view arrays; fall back to the array itself.
+                base_array = headers.base if headers.base is not None else headers
+                headers = rfn.append_fields(base_array, dim, comp_array, usemask=False)
         return headers
 
     def compute_dimensions(self, headers: HeaderArray, dim_names: tuple[str, ...]) -> list[Dimension]:
@@ -305,18 +314,9 @@ class ComponentSynthesisStrategy(IndexStrategy):
 
 
 class CompositeStrategy(IndexStrategy):
-    """Combines multiple strategies in sequence.
-
-    Strategies are applied in the order provided. Each strategy's
-    header transformation feeds into the next strategy.
-    """
+    """Apply multiple strategies in sequence; each transform feeds into the next."""
 
     def __init__(self, strategies: list[IndexStrategy]):
-        """Initialize composite strategy.
-
-        Args:
-            strategies: List of strategies to apply in order
-        """
         if not strategies:
             raise ValueError("CompositeStrategy requires at least one strategy")
         self.strategies = strategies
@@ -330,51 +330,50 @@ class CompositeStrategy(IndexStrategy):
         return result
 
     def compute_dimensions(self, headers: HeaderArray, dim_names: tuple[str, ...]) -> list[Dimension]:
-        """Compute dimensions using the last strategy's logic.
+        """Delegate dimension computation to the final strategy.
 
-        Note: This assumes the last strategy knows about all transformations.
-        For more complex cases, might need to coordinate between strategies.
+        Assumes the final strategy is aware of every preceding header transformation.
         """
         return self.strategies[-1].compute_dimensions(headers, dim_names)
 
 
 class IndexStrategyRegistry:
-    """Registry for index strategies.
-
-    This factory encapsulates the logic of which strategies to use
-    based on the grid override configuration and template properties.
-    """
+    """Picks the right :class:`IndexStrategy` from grid overrides + template properties."""
 
     def create_strategy(
         self,
         grid_overrides: GridOverrides | None = None,
         synthesize_dims: tuple[str, ...] = (),
+        template: AbstractDatasetTemplate | None = None,
     ) -> IndexStrategy:
         """Create appropriate index strategy from grid overrides.
 
         Args:
-            grid_overrides: Optional grid override configuration
-            synthesize_dims: Dimensions to synthesize if missing (e.g. component)
+            grid_overrides: Optional grid override configuration.
+            synthesize_dims: Dimensions to synthesize if missing (e.g. ``component``).
+            template: Optional dataset template. Used to drive template-aware strategy
+                parameters (e.g. picking ``shot_line`` vs. ``sail_line`` for shot
+                wrapping and deciding whether ``shot_index`` must always be calculated).
 
         Returns:
-            IndexStrategy (may be composite if multiple overrides)
+            IndexStrategy (may be composite if multiple overrides).
         """
-        strategies = []
+        strategies: list[IndexStrategy] = []
 
-        # Add synthesis strategy if template requires it
         if synthesize_dims:
             strategies.append(ComponentSynthesisStrategy(synthesize_dims))
 
-        if grid_overrides is not None and grid_overrides:
-            # Add channel wrapping if requested
+        if grid_overrides:
             if grid_overrides.auto_channel_wrap:
                 strategies.append(ChannelWrappingStrategy())
 
-            # Add shot wrapping if requested
             if grid_overrides.auto_shot_wrap:
-                strategies.append(ShotWrappingStrategy())
+                line_field, always_calculate = self._resolve_shot_wrap_params(template)
+                strategies.append(
+                    ShotWrappingStrategy(line_field=line_field, always_calculate=always_calculate)
+                )
 
-            # Add non-binned or duplicate handling (mutually exclusive)
+            # NonBinned and HasDuplicates are mutually exclusive.
             if grid_overrides.non_binned:
                 strategies.append(
                     NonBinnedStrategy(
@@ -385,13 +384,26 @@ class IndexStrategyRegistry:
             elif grid_overrides.has_duplicates:
                 strategies.append(DuplicateHandlingStrategy())
 
-        # If no strategies added, use regular grid
         if not strategies:
             return RegularGridStrategy()
-
-        # If single strategy, return it directly
         if len(strategies) == 1:
             return strategies[0]
-
-        # Otherwise, return composite
         return CompositeStrategy(strategies)
+
+    @staticmethod
+    def _resolve_shot_wrap_params(
+        template: AbstractDatasetTemplate | None,
+    ) -> tuple[str, bool]:
+        """Pick ``line_field`` and ``always_calculate`` for shot wrapping from a template.
+
+        Templates that declare ``shot_index`` as a calculated dimension (e.g. OBN) need
+        ``shot_index`` to always be emitted. The line field is ``shot_line`` if it appears
+        in the template's spatial dimensions, otherwise ``sail_line``.
+        """
+        if template is None:
+            return "sail_line", False
+
+        spatial = set(template.spatial_dimension_names)
+        line_field = "shot_line" if "shot_line" in spatial else "sail_line"
+        always_calculate = "shot_index" in template.calculated_dimension_names
+        return line_field, always_calculate
