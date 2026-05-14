@@ -102,8 +102,7 @@ def run_segy_ingestion(  # noqa PLR0913
 
     schema = SchemaResolver().resolve(mdio_template, grid_overrides)
 
-    # Push the resolved dim names + chunk shape back onto the (copied) template via the
-    # public apply_resolved_dimensions API instead of touching private state.
+    # NonBinned / HasDuplicates change the dim layout; sync it back onto the template copy.
     if grid_overrides and (grid_overrides.non_binned or grid_overrides.has_duplicates):
         mdio_template.apply_resolved_dimensions(
             dim_names=tuple(d.name for d in schema.dimensions),

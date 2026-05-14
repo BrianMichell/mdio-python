@@ -53,34 +53,26 @@ class Seismic3DCdpGathersTemplate(AbstractDatasetTemplate):
             "inline",
             dimensions=("inline",),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("inline")),
         )
         self._builder.add_coordinate(
             "crossline",
             dimensions=("crossline",),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("crossline")),
         )
         self._builder.add_coordinate(
             self._gather_domain,
             dimensions=(self._gather_domain,),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self._gather_domain)),
+            metadata=self._dim_coord_metadata(self._gather_domain),
         )
         self._builder.add_coordinate(
             self.trace_domain,
             dimensions=(self.trace_domain,),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
+            metadata=self._dim_coord_metadata(self.trace_domain),
         )
 
-        # Add non-dimension coordinates
-        coord_spatial_shape = (self._dim_sizes[0], self._dim_sizes[1])  # inline, crossline
-        coord_chunk_shape = get_constrained_chunksize(
-            coord_spatial_shape,
-            ScalarType.FLOAT64,
-            MAX_COORDINATES_BYTES,
-        )
+        coord_chunk_shape = get_constrained_chunksize(self._dim_sizes[:2], ScalarType.FLOAT64, MAX_COORDINATES_BYTES)
         chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape))
 
         compressor = Blosc(cname=BloscCname.zstd)

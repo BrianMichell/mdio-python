@@ -27,14 +27,20 @@ class Seismic2DStreamerShotGathersTemplate(AbstractDatasetTemplate):
         return {"surveyType": "2D", "gatherType": "common_source"}
 
     def _add_coordinates(self) -> None:
-        # Add dimension coordinates
-        for name in self._dim_names:
+        # Add dimension coordinates. shot_point and channel are unitless integer
+        # indices; only the trace (time/depth) domain carries a unit.
+        for name in ("shot_point", "channel"):
             self._builder.add_coordinate(
                 name,
                 dimensions=(name,),
                 data_type=ScalarType.INT32,
-                metadata=VariableMetadata(units_v1=self.get_unit_by_key(name)),
             )
+        self._builder.add_coordinate(
+            self._data_domain,
+            dimensions=(self._data_domain,),
+            data_type=ScalarType.INT32,
+            metadata=self._dim_coord_metadata(self._data_domain),
+        )
 
         # Add non-dimension coordinates
         compressor = compressors.Blosc(cname=compressors.BloscCname.zstd)

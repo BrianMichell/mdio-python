@@ -75,13 +75,10 @@ class HeaderAnalyzer:
         Returns:
             HeaderArray with extracted headers
         """
-        # Convert set to tuple for parse_headers
-        subset = tuple(requirements.all_fields())
-
         return parse_headers(
             segy_file_kwargs=segy_file_kwargs,
             num_traces=num_traces,
-            subset=subset,
+            subset=tuple(requirements.all_fields()),
             block_size=block_size,
             progress_bar=progress_bar,
         )

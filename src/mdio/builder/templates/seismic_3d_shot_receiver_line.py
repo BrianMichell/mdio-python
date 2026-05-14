@@ -58,7 +58,7 @@ class Seismic3DShotReceiverLineGathersTemplate(AbstractDatasetTemplate):
             self._data_domain,
             dimensions=(self._data_domain,),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self._data_domain)),
+            metadata=self._dim_coord_metadata(self._data_domain),
         )
 
         # Add non-dimension coordinates

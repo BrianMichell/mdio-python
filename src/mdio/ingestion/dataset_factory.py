@@ -43,13 +43,10 @@ class DatasetFactory:
         Returns:
             Complete Dataset ready for xarray conversion
         """
-        # Create dimension sizes dict
+        # Order sizes by the template's dimension_names so build_dataset receives them in the expected order.
         dim_sizes = {dim.name: len(dim.coords) for dim in dimensions}
-
-        # The sizes tuple must match the template's expected dimension_names
         sizes = tuple(dim_sizes[dim_name] for dim_name in template.dimension_names)
 
-        # Build dataset using the template
         return template.build_dataset(
             name=schema.name,
             sizes=sizes,

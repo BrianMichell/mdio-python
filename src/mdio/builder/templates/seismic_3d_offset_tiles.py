@@ -39,37 +39,31 @@ class Seismic3DOffsetTilesTemplate(AbstractDatasetTemplate):
             "inline",
             dimensions=("inline",),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("inline")),
         )
         self._builder.add_coordinate(
             "crossline",
             dimensions=("crossline",),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("crossline")),
         )
         self._builder.add_coordinate(
             "inline_offset_tile",
             dimensions=("inline_offset_tile",),
             data_type=ScalarType.INT16,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("inline_offset_tile")),
         )
         self._builder.add_coordinate(
             "crossline_offset_tile",
             dimensions=("crossline_offset_tile",),
             data_type=ScalarType.INT16,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("crossline_offset_tile")),
         )
         self._builder.add_coordinate(
             self.trace_domain,
             dimensions=(self.trace_domain,),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
+            metadata=self._dim_coord_metadata(self.trace_domain),
         )
 
         # Add non-dimension coordinates
         compressor = compressors.Blosc(cname=compressors.BloscCname.zstd)
-
-        # CDP coordinates (vary by inline, crossline)
         self._builder.add_coordinate(
             "cdp_x",
             dimensions=("inline", "crossline"),

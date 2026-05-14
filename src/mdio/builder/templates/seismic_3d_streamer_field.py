@@ -85,37 +85,16 @@ class Seismic3DStreamerFieldRecordsTemplate(AbstractDatasetTemplate):
             self._data_domain,
             dimensions=(self._data_domain,),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self._data_domain)),
+            metadata=self._dim_coord_metadata(self._data_domain),
         )
 
-        # Add non-dimension coordinates with computed chunk sizes
-        # For 3D coordinates (over sail_line, gun, shot_index)
-        coord_spatial_shape_3d = (
-            self._dim_sizes[0],
-            self._dim_sizes[1],
-            self._dim_sizes[2],
-        )  # sail_line, gun, shot_index
-        coord_chunk_shape_3d = get_constrained_chunksize(
-            coord_spatial_shape_3d,
-            ScalarType.FLOAT64,
-            MAX_COORDINATES_BYTES,
+        # Chunk grids for shot-indexed (3D) and receiver-indexed (5D) non-dim coordinates.
+        shot_chunk_shape = get_constrained_chunksize(self._dim_sizes[:3], ScalarType.FLOAT64, MAX_COORDINATES_BYTES)
+        chunk_grid_3d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=shot_chunk_shape))
+        receiver_chunk_shape = get_constrained_chunksize(
+            self._dim_sizes[:5], ScalarType.FLOAT64, MAX_COORDINATES_BYTES
         )
-        chunk_grid_3d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape_3d))
-
-        # For 5D coordinates (over sail_line, gun, shot_index, cable, channel)
-        coord_spatial_shape_5d = (
-            self._dim_sizes[0],
-            self._dim_sizes[1],
-            self._dim_sizes[2],
-            self._dim_sizes[3],
-            self._dim_sizes[4],
-        )  # sail_line, gun, shot_index, cable, channel
-        coord_chunk_shape_5d = get_constrained_chunksize(
-            coord_spatial_shape_5d,
-            ScalarType.FLOAT64,
-            MAX_COORDINATES_BYTES,
-        )
-        chunk_grid_5d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape_5d))
+        chunk_grid_5d = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=receiver_chunk_shape))
 
         compressor = Blosc(cname=BloscCname.zstd)
         self._builder.add_coordinate(

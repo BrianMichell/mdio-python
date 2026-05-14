@@ -39,19 +39,17 @@ class Seismic3DReceiverGathersTemplate(AbstractDatasetTemplate):
             "receiver",
             dimensions=("receiver",),
             data_type=ScalarType.UINT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("receiver")),
         )
         self._builder.add_coordinate(
             "shot_line",
             dimensions=("shot_line",),
             data_type=ScalarType.UINT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key("shot_line")),
         )
         self._builder.add_coordinate(
             self.trace_domain,
             dimensions=(self.trace_domain,),
             data_type=ScalarType.INT32,
-            metadata=VariableMetadata(units_v1=self.get_unit_by_key(self.trace_domain)),
+            metadata=self._dim_coord_metadata(self.trace_domain),
         )
 
         # Add non-dimension coordinates

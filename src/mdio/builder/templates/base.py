@@ -269,6 +269,26 @@ class AbstractDatasetTemplate(ABC):
         """Get units by variable/dimension/coordinate name. Returns None if not found."""
         return self._units.get(key, None)
 
+    def _dim_coord_metadata(self, name: str) -> VariableMetadata | None:
+        """Build metadata for a dimension coordinate.
+
+        Dimension coordinates such as ``inline`` or ``crossline`` are integer survey
+        indices and are inherently unitless. Returning ``None`` here keeps the
+        ``metadata`` field unset on those coordinates rather than wrapping a
+        ``units_v1=None`` placeholder.
+
+        Args:
+            name: Coordinate name to look up units for.
+
+        Returns:
+            A ``VariableMetadata`` carrying the registered unit, or ``None`` if no
+            unit is registered for ``name``.
+        """
+        unit = self.get_unit_by_key(name)
+        if unit is None:
+            return None
+        return VariableMetadata(units_v1=unit)
+
     def _add_dimensions(self) -> None:
         """Add custom dimensions.
 
@@ -290,20 +310,14 @@ class AbstractDatasetTemplate(ABC):
                 name,
                 dimensions=(name,),
                 data_type=ScalarType.INT32,
-                metadata=VariableMetadata(units_v1=self.get_unit_by_key(name)),
+                metadata=self._dim_coord_metadata(name),
             )
 
-        # Add non-dimension coordinates with computed chunk sizes
+        spatial_shape = self._dim_sizes[:-1]
+        coord_chunk_shape = get_constrained_chunksize(spatial_shape, ScalarType.FLOAT64, MAX_COORDINATES_BYTES)
+        chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape))
+
         for name in self.coordinate_names:
-            # Compute optimal chunk size for coordinates (spatial dimensions only)
-            spatial_shape = self._dim_sizes[:-1]  # Exclude vertical dimension
-            coord_chunk_shape = get_constrained_chunksize(
-                spatial_shape,
-                ScalarType.FLOAT64,
-                MAX_COORDINATES_BYTES,
-            )
-            chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=coord_chunk_shape))
-
             self._builder.add_coordinate(
                 name=name,
                 dimensions=self.spatial_dimension_names,
@@ -313,14 +327,9 @@ class AbstractDatasetTemplate(ABC):
             )
 
     def _add_trace_mask(self) -> None:
-        """Add trace mask variables with computed chunk sizes."""
-        # Compute optimal chunk size for trace mask (spatial dimensions only)
-        spatial_shape = self._dim_sizes[:-1]  # Exclude vertical dimension
-        mask_chunk_shape = get_constrained_chunksize(
-            spatial_shape,
-            ScalarType.BOOL,
-            MAX_SIZE_LIVE_MASK,
-        )
+        """Add trace mask variable."""
+        spatial_shape = self._dim_sizes[:-1]
+        mask_chunk_shape = get_constrained_chunksize(spatial_shape, ScalarType.BOOL, MAX_SIZE_LIVE_MASK)
         chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=mask_chunk_shape))
 
         self._builder.add_variable(
@@ -345,15 +354,7 @@ class AbstractDatasetTemplate(ABC):
         )
 
     def _add_raw_headers(self) -> None:
-        """Add raw binary headers variable.
-
-        This variable stores the raw binary header bytes for each trace, which can be useful
-        for preserving original SEG-Y header information. Only supported in Zarr v3 format.
-
-        The raw headers variable has:
-        - Same spatial dimensions as trace headers (all dimensions except vertical)
-        - No coordinates
-        """
+        """Add raw 240-byte trace header variable. Zarr v3 only."""
         chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=self.full_chunk_shape[:-1]))
         self._builder.add_variable(
             name="raw_headers",
