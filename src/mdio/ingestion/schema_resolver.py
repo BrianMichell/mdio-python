@@ -1,16 +1,9 @@
-"""Schema Resolution System for MDIO Ingestion.
-
-This module resolves the final dataset schema from a template and grid overrides
-before any data is scanned. This allows for early validation and clear separation
-between configuration and execution.
-"""
+"""Schema resolution: turn a template + grid overrides into a final, ingestion-ready schema."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -26,41 +19,32 @@ class DimensionSpec(BaseModel):
     """Specification for a dimension in the final dataset.
 
     Attributes:
-        name: Name of the dimension (e.g., "shot_point", "cable", "trace", "time")
-        source: Where this dimension comes from:
-            - "header": Read from SEG-Y trace headers
-            - "computed": Computed from other headers (e.g., shot_index from shot_point)
-            - "synthetic": Generated (e.g., time/depth axis from binary header)
-        header_key: The SEG-Y header field name if source is "header" or "computed"
-        is_spatial: Whether this is a spatial dimension (not vertical domain)
+        name: Dimension name (e.g. ``"inline"``, ``"shot_point"``, ``"trace"``, ``"time"``).
+        is_spatial: Whether this is a spatial dimension. ``False`` only for the vertical
+            (data-domain) dimension.
+        is_calculated: Whether this dimension's coordinate values are produced by an index
+            strategy at ingest time (e.g. ``shot_index`` from a template, or ``trace`` added
+            by a grid override) rather than read directly. The pipeline uses this to give a
+            clear error if a required strategy was not enabled.
     """
 
     name: str
-    source: Literal["header", "computed", "synthetic"]
-    header_key: str | None = None
     is_spatial: bool = True
+    is_calculated: bool = False
 
 
 class CoordinateSpec(BaseModel):
-    """Specification for a coordinate in the final dataset.
+    """Specification for a non-dimension coordinate in the final dataset.
 
     Attributes:
-        name: Name of the coordinate (e.g., "cdp_x", "gun", "source_coord_x")
-        dimensions: Tuple of dimension names this coordinate depends on
-        dtype: Data type for the coordinate
-        source: Where this coordinate comes from:
-            - "header": Read from SEG-Y trace headers
-            - "computed": Computed from headers with a function
-        header_key: The SEG-Y header field name if source is "header"
-        computation: Optional function to compute coordinate from headers
+        name: Coordinate name (e.g. ``"cdp_x"``, ``"gun"``, ``"source_coord_x"``).
+        dimensions: Names of the dimensions this coordinate is indexed by.
+        dtype: Data type for the coordinate.
     """
 
     name: str
     dimensions: tuple[str, ...]
     dtype: ScalarType
-    source: Literal["header", "computed"]
-    header_key: str | None = None
-    computation: Callable | None = Field(default=None, exclude=True)
 
 
 class ResolvedSchema(BaseModel):
@@ -87,9 +71,9 @@ class ResolvedSchema(BaseModel):
     default_variable_name: str = "amplitude"
 
     def required_header_fields(self) -> set[str]:
-        """Get all header fields required for this schema."""
-        fields = {dim.header_key for dim in self.dimensions if dim.header_key is not None}
-        fields.update(coord.header_key for coord in self.coordinates if coord.header_key is not None)
+        """Names that must be readable from SEG-Y trace headers to materialize this schema."""
+        fields = {dim.name for dim in self.dimensions if dim.is_spatial and not dim.is_calculated}
+        fields.update(coord.name for coord in self.coordinates)
         # coordinate_scalar is always needed to scale X/Y coordinates.
         fields.add("coordinate_scalar")
         return fields
@@ -97,10 +81,6 @@ class ResolvedSchema(BaseModel):
     def spatial_dimensions(self) -> list[DimensionSpec]:
         """Get only spatial dimensions (excludes vertical/trace domain)."""
         return [dim for dim in self.dimensions if dim.is_spatial]
-
-    def computed_dimensions(self) -> list[DimensionSpec]:
-        """Get dimensions that need to be computed from headers."""
-        return [dim for dim in self.dimensions if dim.source == "computed"]
 
 
 class SchemaResolver:
@@ -134,22 +114,12 @@ class SchemaResolver:
 
     def _template_to_schema(self, template: AbstractDatasetTemplate) -> ResolvedSchema:
         """Convert a template to a resolved schema without overrides."""
-        dimensions = []
-        for dim_name in template.spatial_dimension_names:
-            is_computed = dim_name in template.calculated_dimension_names
-            dimensions.append(
-                DimensionSpec(
-                    name=dim_name,
-                    source="computed" if is_computed else "header",
-                    header_key=dim_name,
-                    is_spatial=True,
-                )
-            )
-
-        vertical_dim = template.dimension_names[-1]
-        dimensions.append(
-            DimensionSpec(name=vertical_dim, source="synthetic", header_key=None, is_spatial=False)
-        )
+        calculated = set(template.calculated_dimension_names)
+        dimensions = [
+            DimensionSpec(name=name, is_spatial=True, is_calculated=name in calculated)
+            for name in template.spatial_dimension_names
+        ]
+        dimensions.append(DimensionSpec(name=template.dimension_names[-1], is_spatial=False))
 
         return ResolvedSchema(
             name=template.name,
@@ -209,9 +179,7 @@ class SchemaResolver:
             else:
                 if replaced_count > 0:
                     new_dimensions.append(
-                        DimensionSpec(
-                            name="trace", source="computed", header_key=None, is_spatial=True
-                        ).model_dump()
+                        DimensionSpec(name="trace", is_spatial=True, is_calculated=True).model_dump()
                     )
                     new_chunk_shape.append(grid_overrides.chunksize)
                 new_dimensions.append(dim)
@@ -252,9 +220,7 @@ class SchemaResolver:
                 new_chunk_shape.append(chunk_shape[i])
             else:
                 new_dimensions.append(
-                    DimensionSpec(
-                        name="trace", source="computed", header_key=None, is_spatial=True
-                    ).model_dump()
+                    DimensionSpec(name="trace", is_spatial=True, is_calculated=True).model_dump()
                 )
                 new_chunk_shape.append(1)
                 new_dimensions.append(dim)

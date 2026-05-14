@@ -59,49 +59,15 @@ class Seismic3DObnReceiverGathersTemplate(AbstractDatasetTemplate):
     def declare_coordinate_specs(self) -> tuple[Any, ...]:
         from mdio.ingestion.schema_resolver import CoordinateSpec
 
+        receiver_dim = ("receiver",)
+        shot_dims = ("shot_line", "gun", "shot_index")
         return (
-            CoordinateSpec(
-                name="group_coord_x",
-                dimensions=("receiver",),
-                dtype=ScalarType.FLOAT64,
-                source="header",
-                header_key="group_coord_x",
-            ),
-            CoordinateSpec(
-                name="group_coord_y",
-                dimensions=("receiver",),
-                dtype=ScalarType.FLOAT64,
-                source="header",
-                header_key="group_coord_y",
-            ),
-            CoordinateSpec(
-                name="shot_point",
-                dimensions=("shot_line", "gun", "shot_index"),
-                dtype=ScalarType.UINT32,
-                source="header",
-                header_key="shot_point",
-            ),
-            CoordinateSpec(
-                name="orig_field_record_num",
-                dimensions=("shot_line", "gun", "shot_index"),
-                dtype=ScalarType.UINT32,
-                source="header",
-                header_key="orig_field_record_num",
-            ),
-            CoordinateSpec(
-                name="source_coord_x",
-                dimensions=("shot_line", "gun", "shot_index"),
-                dtype=ScalarType.FLOAT64,
-                source="header",
-                header_key="source_coord_x",
-            ),
-            CoordinateSpec(
-                name="source_coord_y",
-                dimensions=("shot_line", "gun", "shot_index"),
-                dtype=ScalarType.FLOAT64,
-                source="header",
-                header_key="source_coord_y",
-            ),
+            CoordinateSpec(name="group_coord_x", dimensions=receiver_dim, dtype=ScalarType.FLOAT64),
+            CoordinateSpec(name="group_coord_y", dimensions=receiver_dim, dtype=ScalarType.FLOAT64),
+            CoordinateSpec(name="shot_point", dimensions=shot_dims, dtype=ScalarType.UINT32),
+            CoordinateSpec(name="orig_field_record_num", dimensions=shot_dims, dtype=ScalarType.UINT32),
+            CoordinateSpec(name="source_coord_x", dimensions=shot_dims, dtype=ScalarType.FLOAT64),
+            CoordinateSpec(name="source_coord_y", dimensions=shot_dims, dtype=ScalarType.FLOAT64),
         )
 
     def _add_coordinates(self) -> None:

@@ -72,30 +72,25 @@ class AbstractDatasetTemplate(ABC):
         return template_repr_html(self)
 
     def declare_coordinate_specs(self) -> tuple[CoordinateSpec, ...]:
-        """Return per-coordinate (name, dims, dtype, source, header_key, chunk_policy)."""
+        """Return the non-dimension coordinate specs (name, dims, dtype) for this template."""
         from mdio.ingestion.schema_resolver import CoordinateSpec
 
-        specs = []
-        for coord_name in self.physical_coordinate_names:
-            specs.append(
-                CoordinateSpec(
-                    name=coord_name,
-                    dimensions=self.spatial_dimension_names,
-                    dtype=ScalarType.FLOAT64,
-                    source="header",
-                    header_key=coord_name,
-                )
+        specs = [
+            CoordinateSpec(
+                name=coord_name,
+                dimensions=self.spatial_dimension_names,
+                dtype=ScalarType.FLOAT64,
             )
-        for coord_name in self.logical_coordinate_names:
-            specs.append(
-                CoordinateSpec(
-                    name=coord_name,
-                    dimensions=self.spatial_dimension_names,
-                    dtype=ScalarType.UINT8 if coord_name == "gun" else ScalarType.INT32,
-                    source="header",
-                    header_key=coord_name,
-                )
+            for coord_name in self.physical_coordinate_names
+        ]
+        specs.extend(
+            CoordinateSpec(
+                name=coord_name,
+                dimensions=self.spatial_dimension_names,
+                dtype=ScalarType.UINT8 if coord_name == "gun" else ScalarType.INT32,
             )
+            for coord_name in self.logical_coordinate_names
+        )
         return tuple(specs)
 
     def build_dataset(

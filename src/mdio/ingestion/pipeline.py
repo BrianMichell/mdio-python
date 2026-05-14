@@ -7,18 +7,17 @@ import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
-import zarr
 from segy.config import SegyFileSettings
 
 from mdio.api.io import _normalize_path
 from mdio.api.io import to_mdio
 from mdio.builder.xarray_builder import to_xarray_dataset
-from mdio.constants import ZarrFormat
 from mdio.converters.exceptions import GridTraceCountError
 from mdio.converters.type_converter import to_structured_type
 from mdio.core.config import MDIOSettings
 from mdio.core.dimension import Dimension
 from mdio.core.grid import Grid
+from mdio.ingestion._raw_headers_experimental import should_include_raw_headers
 from mdio.ingestion.coordinate_utils import apply_runtime_units
 from mdio.ingestion.coordinate_utils import get_coordinates
 from mdio.ingestion.coordinate_utils import populate_dim_coordinates
@@ -113,7 +112,7 @@ def run_segy_ingestion(  # noqa PLR0913
 
     analyzer = HeaderAnalyzer()
     requirements = analyzer.requirements_from_schema(schema)
-    raw_headers = analyzer.analyze(
+    parsed_headers = analyzer.analyze(
         segy_file_kwargs=segy_file_kwargs,
         requirements=requirements,
         num_traces=segy_file_info.num_traces,
@@ -127,7 +126,7 @@ def run_segy_ingestion(  # noqa PLR0913
     )
     logger.info("Using strategy: %s", strategy.name)
 
-    indexed_headers = strategy.transform_headers(raw_headers)
+    indexed_headers = strategy.transform_headers(parsed_headers)
     dim_names = tuple(d.name for d in schema.dimensions if d.is_spatial)
     dimensions = strategy.compute_dimensions(indexed_headers, dim_names)
 
@@ -137,7 +136,7 @@ def run_segy_ingestion(  # noqa PLR0913
     missing_computed = [
         d.name
         for d in schema.dimensions
-        if d.is_spatial and d.source == "computed" and d.name not in produced_dim_names
+        if d.is_spatial and d.is_calculated and d.name not in produced_dim_names
     ]
     if missing_computed:
         err = (
@@ -169,20 +168,12 @@ def run_segy_ingestion(  # noqa PLR0913
     _, non_dim_coords = get_coordinates(grid, indexed_headers, mdio_template)
     header_dtype = to_structured_type(segy_spec.trace.header.dtype)
 
-    include_raw_headers = False
-    if settings.raw_headers:
-        if zarr.config.get("default_zarr_format") == ZarrFormat.V2:
-            logger.warning("Raw headers are only supported for Zarr v3. Skipping raw headers.")
-        else:
-            logger.warning("MDIO__IMPORT__RAW_HEADERS is experimental and expected to change or be removed.")
-            include_raw_headers = True
-
     mdio_ds: Dataset = DatasetFactory().build(
         template=mdio_template,
         schema=schema,
         dimensions=dimensions,
         header_dtype=header_dtype,
-        include_raw_headers=include_raw_headers,
+        include_raw_headers=should_include_raw_headers(),
     )
 
     grid_overrides_dict = None

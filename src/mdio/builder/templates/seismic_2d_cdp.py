@@ -43,20 +43,8 @@ class Seismic2DCdpGathersTemplate(AbstractDatasetTemplate):
         from mdio.ingestion.schema_resolver import CoordinateSpec
 
         return (
-            CoordinateSpec(
-                name="cdp_x",
-                dimensions=("cdp",),
-                dtype=ScalarType.FLOAT64,
-                source="header",
-                header_key="cdp_x",
-            ),
-            CoordinateSpec(
-                name="cdp_y",
-                dimensions=("cdp",),
-                dtype=ScalarType.FLOAT64,
-                source="header",
-                header_key="cdp_y",
-            ),
+            CoordinateSpec(name="cdp_x", dimensions=("cdp",), dtype=ScalarType.FLOAT64),
+            CoordinateSpec(name="cdp_y", dimensions=("cdp",), dtype=ScalarType.FLOAT64),
         )
 
     def _add_coordinates(self) -> None:

@@ -19,16 +19,16 @@ class TestSchemaResolverNoOverrides:
         assert schema.name == "StreamerShotGathers3D"
         assert [d.name for d in schema.dimensions] == ["shot_point", "cable", "channel", "time"]
         assert schema.dimensions[-1].is_spatial is False
-        assert schema.dimensions[-1].source == "synthetic"
+        assert schema.dimensions[-1].is_calculated is False
         # Default chunk shape comes straight from the template.
         assert schema.chunk_shape == template.full_chunk_shape
 
-    def test_obn_template_marks_shot_index_as_computed(self) -> None:
+    def test_obn_template_marks_shot_index_as_calculated(self) -> None:
         template = Seismic3DObnReceiverGathersTemplate(data_domain="time")
         schema = SchemaResolver().resolve(template, grid_overrides=None)
 
         shot_index = next(d for d in schema.dimensions if d.name == "shot_index")
-        assert shot_index.source == "computed"
+        assert shot_index.is_calculated is True
         assert shot_index.is_spatial is True
 
     def test_cdp_required_header_fields(self) -> None:

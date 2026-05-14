@@ -1,16 +1,12 @@
-"""Metadata utilities for MDIO ingestion.
-
-This module contains functions for adding metadata to MDIO datasets
-during ingestion.
-"""
+"""Metadata utilities for MDIO ingestion."""
 
 from __future__ import annotations
 
-import base64
 from typing import TYPE_CHECKING
 from typing import Any
 
 from mdio.core.config import MDIOSettings
+from mdio.ingestion._raw_headers_experimental import attach_raw_binary_header
 
 if TYPE_CHECKING:
     from xarray import Dataset as xr_Dataset
@@ -30,9 +26,7 @@ def add_grid_override_to_metadata(dataset: Dataset, grid_overrides: dict[str, An
 
 def add_segy_file_headers(xr_dataset: xr_Dataset, segy_file_info: SegyFileInfo) -> xr_Dataset:
     """Add SEG-Y file headers to the dataset as metadata."""
-    settings = MDIOSettings()
-
-    if not settings.save_segy_file_header:
+    if not MDIOSettings().save_segy_file_header:
         return xr_dataset
 
     expected_rows = 40
@@ -50,14 +44,13 @@ def add_segy_file_headers(xr_dataset: xr_Dataset, segy_file_info: SegyFileInfo) 
         raise ValueError(err)
 
     xr_dataset["segy_file_header"] = ((), "")
-    xr_dataset["segy_file_header"].attrs.update(
+    file_header_attrs = xr_dataset["segy_file_header"].attrs
+    file_header_attrs.update(
         {
             "textHeader": segy_file_info.text_header,
             "binaryHeader": segy_file_info.binary_header_dict,
         }
     )
-    if settings.raw_headers:
-        raw_binary_base64 = base64.b64encode(segy_file_info.raw_binary_headers).decode("ascii")
-        xr_dataset["segy_file_header"].attrs.update({"rawBinaryHeader": raw_binary_base64})
+    attach_raw_binary_header(file_header_attrs, segy_file_info.raw_binary_headers)
 
     return xr_dataset
