@@ -29,6 +29,7 @@ from mdio.segy.exceptions import GridOverrideKeysError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from collections.abc import Sequence
 
     from numpy.typing import DTypeLike
     from segy.arrays import HeaderArray
@@ -49,30 +50,38 @@ def append_header_field(headers: HeaderArray, name: str, values: np.ndarray) -> 
     return rfn.append_fields(base, name, values, usemask=False)
 
 
-def rank_within_groups(values: np.ndarray, group_ids: np.ndarray) -> np.ndarray:
-    """Return the 0-based rank of each value within its group.
+def rank_within_groups(values: np.ndarray, group_keys: Sequence[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """Return the 0-based rank of each value within its group, plus a duplicate mask.
 
-    Within each group, a value's rank is its position in that group's sorted unique values.
-    Groups are processed by sorting once and splitting on boundaries.
+    Ranks are positional offsets within each group after sorting by group then value.
+    They are dense only when the duplicate mask is all ``False``.
+
+    Args:
+        values: Per-trace values to rank.
+        group_keys: Per-trace arrays whose combination identifies a trace's group.
+
+    Returns:
+        Ranks and a boolean duplicate mask, both aligned with ``values``.
     """
-    ranks = np.empty(len(values), dtype=np.uint32)
-    order = np.argsort(group_ids, kind="stable")
-    boundaries = np.flatnonzero(np.diff(group_ids[order])) + 1
-    for selection in np.split(order, boundaries):
-        group_values = values[selection]
-        unique_values = np.unique(group_values)
-        ranks[selection] = np.searchsorted(unique_values, group_values)
-    return ranks
+    num_traces = len(values)
+    order = np.lexsort((values, *reversed(group_keys)))
 
+    starts_group = np.zeros(num_traces, dtype=bool)
+    if num_traces:
+        starts_group[0] = True
+    for key in group_keys:
+        sorted_key = key[order]
+        starts_group[1:] |= sorted_key[1:] != sorted_key[:-1]
 
-def _group_ids_from_fields(headers: HeaderArray, group_fields: tuple[str, ...]) -> np.ndarray:
-    """Map each trace to an integer group id from the given structured fields.
+    positions = np.arange(num_traces)
+    group_start = np.maximum.accumulate(np.where(starts_group, positions, 0))
+    ranks = np.empty(num_traces, dtype=np.uint32)
+    ranks[order] = positions - group_start
 
-    Uses ``np.unique`` over the structured field subset so field dtypes are preserved.
-    ``return_inverse`` is raveled because NumPy 2.x may return a column vector.
-    """
-    _, inverse = np.unique(headers[list(group_fields)], return_inverse=True)
-    return inverse.ravel()
+    sorted_values = values[order]
+    duplicates = np.zeros(num_traces, dtype=bool)
+    duplicates[order[1:]] = ~starts_group[1:] & (sorted_values[1:] == sorted_values[:-1])
+    return ranks, duplicates
 
 
 def _binned_spatial_dims(template: AbstractDatasetTemplate | None) -> tuple[str, ...]:
@@ -379,40 +388,46 @@ class HeaderRankingStrategy(IndexStrategy):
 
     def transform_headers(self, headers: HeaderArray) -> HeaderArray:
         """Append `index_name`, the rank of `value_field` within each `group_fields` group."""
-        self._validate_unique_values(headers)
-
         values = np.asarray(headers[self.value_field])
-        group_ids = _group_ids_from_fields(headers, self.group_fields)
-        ranks = rank_within_groups(values, group_ids)
+        group_keys = tuple(np.asarray(headers[name]) for name in self.group_fields)
+        ranks, duplicates = rank_within_groups(values, group_keys)
+
+        if duplicates.any():
+            raise ValueError(self._duplicate_message(values, group_keys, duplicates))
+
         headers = append_header_field(headers, self.index_name, ranks)
 
-        n_groups = int(group_ids.max()) + 1 if len(group_ids) else 0
         logger.info(
             "Ranked '%s' into dense '%s' across %d group(s) keyed by %s",
             self.value_field,
             self.index_name,
-            n_groups,
+            int(np.count_nonzero(ranks == 0)),
             self.group_fields,
         )
         return headers
 
-    def _validate_unique_values(self, headers: HeaderArray) -> None:
-        """Raise if ``value_field`` repeats within a group."""
+    def _duplicate_message(
+        self,
+        values: np.ndarray,
+        group_keys: tuple[np.ndarray, ...],
+        duplicates: np.ndarray,
+    ) -> str:
+        """Describe the first offending key. Only reached on the failure path, so an extra scan is fine."""
+        offender = int(np.flatnonzero(duplicates)[0])
         key_fields = (*self.group_fields, self.value_field)
-        keys = headers[list(key_fields)]
-        unique_keys, counts = np.unique(keys, return_counts=True)
-        duplicates = unique_keys[counts > 1]
-        if len(duplicates) == 0:
-            return
 
-        sample = duplicates[0]
-        key_desc = ", ".join(f"{name}={sample[name]}" for name in key_fields)
-        msg = (
+        matches = values == values[offender]
+        for key in group_keys:
+            matches &= key == key[offender]
+
+        key_desc = ", ".join(
+            f"{name}={key[offender]}" for name, key in zip(key_fields, (*group_keys, values), strict=True)
+        )
+        return (
             f"Duplicate {self.value_field!r} for ranking into {self.index_name!r}: "
-            f"{key_desc} appears {int(counts[counts > 1][0])} times. "
+            f"{key_desc} appears {int(np.count_nonzero(matches))} times. "
             f"Each ({', '.join(key_fields)}) combination must be unique."
         )
-        raise ValueError(msg)
 
 
 class ComponentSynthesisStrategy(IndexStrategy):
