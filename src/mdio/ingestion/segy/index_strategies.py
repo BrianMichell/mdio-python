@@ -40,6 +40,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def append_header_field(headers: HeaderArray, name: str, values: np.ndarray) -> HeaderArray:
+    """Append a per-trace field to a header array.
+
+    ``.base`` is None for non-view arrays; fall back to the array itself.
+    """
+    base = headers.base if headers.base is not None else headers
+    return rfn.append_fields(base, name, values, usemask=False)
+
+
+def rank_within_groups(values: np.ndarray, group_ids: np.ndarray) -> np.ndarray:
+    """Return the 0-based rank of each value within its group.
+
+    Within each group, a value's rank is its position in that group's sorted unique values.
+    Groups are processed by sorting once and splitting on boundaries.
+    """
+    ranks = np.empty(len(values), dtype=np.uint32)
+    order = np.argsort(group_ids, kind="stable")
+    boundaries = np.flatnonzero(np.diff(group_ids[order])) + 1
+    for selection in np.split(order, boundaries):
+        group_values = values[selection]
+        unique_values = np.unique(group_values)
+        ranks[selection] = np.searchsorted(unique_values, group_values)
+    return ranks
+
+
+def _group_ids_from_fields(headers: HeaderArray, group_fields: tuple[str, ...]) -> np.ndarray:
+    """Map each trace to an integer group id from the given structured fields.
+
+    Uses ``np.unique`` over the structured field subset so field dtypes are preserved.
+    ``return_inverse`` is raveled because NumPy 2.x may return a column vector.
+    """
+    _, inverse = np.unique(headers[list(group_fields)], return_inverse=True)
+    return inverse.ravel()
+
+
+def _binned_spatial_dims(template: AbstractDatasetTemplate | None) -> tuple[str, ...]:
+    """Spatial dimensions that come from headers, excluding calculated ones."""
+    if template is None:
+        return ()
+    calculated = set(template.calculated_dimension_names)
+    return tuple(name for name in template.spatial_dimension_names if name not in calculated)
+
+
 class IndexStrategy(ABC):
     """Abstract base for header indexing strategies.
 
@@ -280,9 +323,7 @@ class ShotWrappingStrategy(IndexStrategy):
             return headers
 
         shot_index = np.empty(len(headers), dtype="uint32")
-        # `.base` is None for non-view arrays; fall back to the array itself.
-        base_array = headers.base if headers.base is not None else headers
-        headers = rfn.append_fields(base_array, "shot_index", shot_index, usemask=False)
+        headers = append_header_field(headers, "shot_index", shot_index)
 
         if geom_type == ShotGunGeometryType.B:
             for line_val in unique_lines:
@@ -297,6 +338,81 @@ class ShotWrappingStrategy(IndexStrategy):
                 headers["shot_index"][line_idxs] = np.searchsorted(unique_shots, shot_points)
 
         return headers
+
+
+class HeaderRankingStrategy(IndexStrategy):
+    """Derive a dense 0-based dimension by ranking a header field within groups of traces.
+
+    Within each ``group_fields`` group, a trace's index is the position of its
+    ``value_field`` in that group's sorted unique values. The source values are never
+    modified; templates typically keep the original header as a coordinate.
+
+    Args:
+        value_field: Header field to rank (e.g. ``epoch``).
+        index_name: Name of the appended dimension field (e.g. ``segment_index``).
+        group_fields: Header fields identifying the ranking group. Must be non-empty.
+
+    Raises:
+        ValueError: If ``group_fields`` is empty.
+    """
+
+    def __init__(
+        self,
+        value_field: str,
+        index_name: str,
+        group_fields: Iterable[str],
+    ) -> None:
+        self.value_field = value_field
+        self.index_name = index_name
+        self.group_fields = tuple(group_fields)
+        if not self.group_fields:
+            msg = (
+                f"HeaderRankingStrategy for {index_name!r} requires non-empty group_fields; "
+                "global ranking is not supported."
+            )
+            raise ValueError(msg)
+
+    @property
+    def required_keys(self) -> frozenset[str]:
+        """The ranked field plus every field that defines a ranking group."""
+        return frozenset({self.value_field, *self.group_fields})
+
+    def transform_headers(self, headers: HeaderArray) -> HeaderArray:
+        """Append `index_name`, the rank of `value_field` within each `group_fields` group."""
+        self._validate_unique_values(headers)
+
+        values = np.asarray(headers[self.value_field])
+        group_ids = _group_ids_from_fields(headers, self.group_fields)
+        ranks = rank_within_groups(values, group_ids)
+        headers = append_header_field(headers, self.index_name, ranks)
+
+        n_groups = int(group_ids.max()) + 1 if len(group_ids) else 0
+        logger.info(
+            "Ranked '%s' into dense '%s' across %d group(s) keyed by %s",
+            self.value_field,
+            self.index_name,
+            n_groups,
+            self.group_fields,
+        )
+        return headers
+
+    def _validate_unique_values(self, headers: HeaderArray) -> None:
+        """Raise if ``value_field`` repeats within a group."""
+        key_fields = (*self.group_fields, self.value_field)
+        keys = headers[list(key_fields)]
+        unique_keys, counts = np.unique(keys, return_counts=True)
+        duplicates = unique_keys[counts > 1]
+        if len(duplicates) == 0:
+            return
+
+        sample = duplicates[0]
+        key_desc = ", ".join(f"{name}={sample[name]}" for name in key_fields)
+        msg = (
+            f"Duplicate {self.value_field!r} for ranking into {self.index_name!r}: "
+            f"{key_desc} appears {int(counts[counts > 1][0])} times. "
+            f"Each ({', '.join(key_fields)}) combination must be unique."
+        )
+        raise ValueError(msg)
 
 
 class ComponentSynthesisStrategy(IndexStrategy):
@@ -323,8 +439,7 @@ class ComponentSynthesisStrategy(IndexStrategy):
                 dim,
             )
             comp_array = np.ones(len(headers), dtype=np.uint8)
-            base_array = headers.base if headers.base is not None else headers
-            headers = rfn.append_fields(base_array, dim, comp_array, usemask=False)
+            headers = append_header_field(headers, dim, comp_array)
         return headers
 
 
@@ -377,22 +492,27 @@ class IndexStrategyRegistry:
     and the schema view of an override cannot drift.
     """
 
-    def schema_effect(self, grid_overrides: GridOverrides | None) -> SchemaEffect | None:
+    def schema_effect(
+        self,
+        grid_overrides: GridOverrides | None,
+        template: AbstractDatasetTemplate | None = None,
+    ) -> SchemaEffect | None:
         """Return the schema reshaping implied by `grid_overrides`, if any.
 
         Derived from the same strategy that will transform headers, so layout changes stay in
-        lock-step with the header transform. Template and synthesis hints do not affect the
-        reshape, so they are omitted when building the strategy here.
+        lock-step with the header transform.
 
         Args:
             grid_overrides: Typed grid override configuration, or `None`.
+            template: Template the overrides were validated against. Required by overrides
+                that read dimension names off the template, such as `calculate_segment_index`.
 
         Returns:
             The matching `SchemaEffect`, or `None` when no layout change applies.
         """
         if not grid_overrides:
             return None
-        return self.create_strategy(grid_overrides).schema_effect()
+        return self.create_strategy(grid_overrides, template=template).schema_effect()
 
     def create_strategy(
         self,
@@ -402,7 +522,7 @@ class IndexStrategyRegistry:
     ) -> IndexStrategy:
         """Build a strategy (possibly composite) for the given config.
 
-        Strategy ordering, when multiple flags are set, mirrors previous behavior:
+        Strategy ordering, when multiple flags are set:
 
         1. `ComponentSynthesisStrategy` (so later strategies can rely on the synthesized
            field being present).
@@ -410,7 +530,9 @@ class IndexStrategyRegistry:
         3. `ShotWrappingStrategy` for `auto_shot_wrap` (streamer; `sail_line`).
         4. `ShotWrappingStrategy` for `calculate_shot_index` (OBN; `shot_line`,
            `always_calculate=True`).
-        5. `NonBinnedStrategy` or `DuplicateHandlingStrategy` (mutually exclusive;
+        5. `HeaderRankingStrategy` for `calculate_segment_index` (ranks `epoch` into
+           `segment_index`).
+        6. `NonBinnedStrategy` or `DuplicateHandlingStrategy` (mutually exclusive;
            `non_binned` wins when both are set).
 
         Args:
@@ -418,7 +540,8 @@ class IndexStrategyRegistry:
                 user-driven overrides.
             synthesize_dims: Dimensions to synthesize if missing (e.g., `component`).
             template: Optional dataset template; used to look up coordinate names so
-                duplicate-handling counters group on dimension fields only.
+                duplicate-handling counters group on dimension fields only, and to derive
+                ranking groups for `calculate_segment_index`.
 
         Returns:
             A single `IndexStrategy` instance. Returns `RegularGridStrategy` when no
@@ -440,6 +563,15 @@ class IndexStrategyRegistry:
 
             if grid_overrides.calculate_shot_index:
                 strategies.append(ShotWrappingStrategy(line_field="shot_line", always_calculate=True))
+
+            if grid_overrides.calculate_segment_index:
+                strategies.append(
+                    HeaderRankingStrategy(
+                        value_field="epoch",
+                        index_name="segment_index",
+                        group_fields=_binned_spatial_dims(template),
+                    )
+                )
 
             if grid_overrides.non_binned:
                 strategies.append(
