@@ -14,13 +14,13 @@ The `NodalContinuousReceiverGathers3D` template organizes data with the followin
 
 Dimensions are ordered `receiver_line`, `receiver`, `component`, `segment_index`, `time`, following the field hierarchy: line, then station, then the sensors at that station, then position in time. Keeping `component` next to `segment_index` means all components of one station are adjacent on disk, so a multi-component read of a station stays local.
 
-| Dimension       | Description                                                                          |
-| --------------- | ------------------------------------------------------------------------------------ |
-| `receiver_line` | Receiver line identifier                                                             |
-| `receiver`      | Receiver (station) identifier                                                        |
-| `component`     | Sensor component (e.g., 1=X, 2=Y, 3=Z, 4=Hydrophone)                                 |
+| Dimension       | Description                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `receiver_line` | Receiver line identifier                                                                      |
+| `receiver`      | Receiver (station) identifier                                                                 |
+| `component`     | Sensor component (e.g., 1=X, 2=Y, 3=Z, 4=Hydrophone)                                          |
 | `segment_index` | Calculated dense position in time (see [Calculated segment_index](#calculated-segment_index)) |
-| `time`          | Sample axis within one segment                                                       |
+| `time`          | Sample axis within one segment                                                                |
 
 ### Coordinates
 
@@ -148,15 +148,15 @@ receiver["amplitude"].isel(segment_index=np.flatnonzero(window)).plot()
 
 ## Required Header Fields
 
-| Field               | Required | Notes                                     |
-| ------------------- | -------- | ----------------------------------------- |
-| `receiver_line`     | Yes      |                                           |
-| `receiver`          | Yes      |                                           |
-| `epoch`             | Yes      | 64-bit microsecond segment start time     |
-| `component`         | No       | Synthesized with value 1 if missing       |
-| `coordinate_scalar` | Yes      |                                           |
-| `group_coord_x`     | Yes      |                                           |
-| `group_coord_y`     | Yes      |                                           |
+| Field               | Required | Notes                                 |
+| ------------------- | -------- | ------------------------------------- |
+| `receiver_line`     | Yes      |                                       |
+| `receiver`          | Yes      |                                       |
+| `epoch`             | Yes      | 64-bit microsecond segment start time |
+| `component`         | No       | Synthesized with value 1 if missing   |
+| `coordinate_scalar` | Yes      |                                       |
+| `group_coord_x`     | Yes      |                                       |
+| `group_coord_y`     | Yes      |                                       |
 
 ## See Also
 

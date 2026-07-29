@@ -124,7 +124,7 @@ class TestSeismic3DNodalContinuousReceiverGathersTemplate:
         assert t.default_variable_name == "amplitude"
 
     def test_component_is_synthesized_when_missing(self) -> None:
-        """component is listed in synthesize_missing_dims."""
+        """Component is listed in synthesize_missing_dims."""
         t = Seismic3DNodalContinuousReceiverGathersTemplate()
 
         assert t.synthesize_missing_dims == ("component",)
