@@ -10,16 +10,16 @@ import pytest
 import xarray as xr
 from segy.standards import get_segy_standard
 
-from mdio.segy.headers import BINARY_HEADER_ATTR
-from mdio.segy.headers import SEGY_FILE_HEADER_VARIABLE
-from mdio.segy.headers import TEXT_HEADER_ATTR
-from mdio.exceptions import MDIONotFoundError
-from mdio.segy.text_header import EXPECTED_COLS
-from mdio.segy.text_header import EXPECTED_ROWS
-from mdio.segy.text_header import validate_text_header
 from mdio import open_mdio
 from mdio import to_mdio
 from mdio import update_segy_file_headers
+from mdio.exceptions import MDIONotFoundError
+from mdio.segy.headers import BINARY_HEADER_ATTR
+from mdio.segy.headers import SEGY_FILE_HEADER_VARIABLE
+from mdio.segy.headers import TEXT_HEADER_ATTR
+from mdio.segy.text_header import EXPECTED_COLS
+from mdio.segy.text_header import EXPECTED_ROWS
+from mdio.segy.text_header import validate_text_header
 
 if TYPE_CHECKING:
     from pathlib import Path
