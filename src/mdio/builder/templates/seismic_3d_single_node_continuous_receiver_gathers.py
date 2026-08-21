@@ -37,7 +37,7 @@ class Seismic3DSingleNodeContinuousReceiverGathersTemplate(AbstractDatasetTempla
         self.synthesize_missing_dims = ("component",)
         self._physical_coord_names = ("group_coord_x", "group_coord_y")
         self._logical_coord_names = ()
-        self._var_chunk_shape = (1, 512, 4096)
+        self._var_chunk_shape = (1, 140, 15001)
         self.add_units({"epoch": EPOCH_UNIT})
 
     @property

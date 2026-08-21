@@ -23,7 +23,7 @@ UNITS_SECOND = TimeUnitModel(time=TimeUnitEnum.SECOND)
 DATASET_SIZE_MAP = {
     "component": 1,
     "epoch": 2048,
-    "time": 4096,
+    "time": 15001,
 }
 DATASET_DTYPE_MAP = {
     "component": "uint8",
@@ -31,7 +31,7 @@ DATASET_DTYPE_MAP = {
     "time": "int32",
 }
 EXPECTED_COORDINATES = ["group_coord_x", "group_coord_y"]
-EXPECTED_CHUNK_SHAPE = (1, 512, 4096)
+EXPECTED_CHUNK_SHAPE = (1, 140, 15001)
 
 
 def _validate_coordinates_headers_trace_mask(dataset: Dataset, headers: StructuredType, domain: str) -> None:
@@ -101,11 +101,11 @@ class TestSeismic3DSingleNodeContinuousReceiverGathersTemplate:
         assert t.default_variable_name == "amplitude"
 
     def test_chunk_shape(self) -> None:
-        """Default chunk shape is (1, 512, 4096) over (component, epoch, time)."""
+        """Default chunk shape is (1, 140, 15001) over (component, epoch, time)."""
         t = Seismic3DSingleNodeContinuousReceiverGathersTemplate()
 
         assert t.full_chunk_shape == EXPECTED_CHUNK_SHAPE
-        assert 1 * 512 * 4096 * 4 == 8 * 1024 * 1024
+        assert 1 * 140 * 15001 * 4 == 8_400_560  # ~8 MiB
 
     def test_build_dataset(self, structured_headers: StructuredType) -> None:
         """Test building a complete dataset with the template."""
