@@ -7,6 +7,7 @@ expected full or partial files.
 
 from __future__ import annotations
 
+import copy
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING
 import fsspec
 import numpy as np
 import pytest
+import zarr
 from numpy.testing import assert_array_equal
 from segy.factory import SegyFactory
 from segy.schema import HeaderField
@@ -250,6 +252,50 @@ def mock_nd_segy(path: str, grid_conf: GridConfig, segy_factory_conf: SegyFactor
         fp.write(factory.create_traces(headers, samples))
 
     return spec
+
+
+def test_sharded_ingestion_matches_traditional_with_remainders(tmp_path: Path) -> None:
+    """Sharded and traditional ingestion produce equal data across partial edge shards."""
+    grid_conf = GridConfig(
+        name="3d_stack",
+        dims=[Dimension("inline", 10, 9, 1), Dimension("crossline", 100, 9, 2)],
+    )
+    segy_factory_conf = SegyFactoryConfig(
+        revision=1,
+        header_byte_map={"inline": 189, "crossline": 193},
+        num_samples=12,
+    )
+    segy_path = tmp_path / "sharded_remainder.sgy"
+    segy_spec = mock_nd_segy(segy_path, grid_conf, segy_factory_conf)
+
+    traditional_template = copy.deepcopy(TemplateRegistry().get("PostStack3DTime"))
+    traditional_template.full_chunk_shape = (4, 4, 4)
+    sharded_template = copy.deepcopy(TemplateRegistry().get("PostStack3DTime"))
+    sharded_template.full_chunk_shape = (4, 4, 4)
+    sharded_template.full_shard_shape = (8, 8, 8)
+
+    traditional_path = tmp_path / "traditional.mdio"
+    sharded_path = tmp_path / "sharded.mdio"
+    with zarr.config.set({"default_zarr_format": 3}):
+        segy_to_mdio(segy_spec, traditional_template, segy_path, traditional_path)
+        segy_to_mdio(segy_spec, sharded_template, segy_path, sharded_path)
+
+    traditional_group = zarr.open_group(traditional_path, mode="r")
+    sharded_group = zarr.open_group(sharded_path, mode="r")
+    traditional_amplitude = traditional_group["amplitude"]
+    sharded_amplitude = sharded_group["amplitude"]
+
+    assert traditional_amplitude.chunks == (4, 4, 4)
+    assert sharded_amplitude.chunks == (4, 4, 4)
+    assert not any(codec.__class__.__name__ == "ShardingCodec" for codec in traditional_amplitude.metadata.codecs)
+    assert any(codec.__class__.__name__ == "ShardingCodec" for codec in sharded_amplitude.metadata.codecs)
+    assert not any(codec.__class__.__name__ == "ShardingCodec" for codec in sharded_group["headers"].metadata.codecs)
+
+    traditional_ds = open_mdio(traditional_path)
+    sharded_ds = open_mdio(sharded_path)
+    assert_array_equal(sharded_ds["amplitude"].values, traditional_ds["amplitude"].values)
+    assert_array_equal(sharded_ds["trace_mask"].values, traditional_ds["trace_mask"].values)
+    assert_array_equal(sharded_ds["headers"].values, traditional_ds["headers"].values)
 
 
 def generate_selection_mask(selection_conf: SelectionMaskConfig, grid_conf: GridConfig) -> NDArray:

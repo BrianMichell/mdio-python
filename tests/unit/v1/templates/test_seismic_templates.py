@@ -66,6 +66,31 @@ class TestSeismicTemplates:
         template.full_chunk_shape = (32, -1)  # Should not raise
         template.full_chunk_shape = (32, 16)  # Should not raise
 
+    def test_shard_shape_assignment_and_resolution(self) -> None:
+        """Shard shape is disabled by default and resolves ``-1`` after sizes exist."""
+        template = Seismic2DPostStackTemplate("time")
+        assert template.full_shard_shape == ()
+
+        template.full_shard_shape = (64, -1)
+        assert template.full_shard_shape == (64, -1)
+
+        template.build_dataset("test", (100, 200))
+        assert template.full_shard_shape == (64, 200)
+
+        template.full_shard_shape = ()
+        assert template.full_shard_shape == ()
+
+    def test_shard_shape_validation(self) -> None:
+        """Shard shape rank and values are validated before dataset construction."""
+        template = Seismic2DPostStackTemplate("time")
+
+        with pytest.raises(ValueError, match="Shard shape.*has.*dimensions, expected"):
+            template.full_shard_shape = (64, 64, 64)
+        with pytest.raises(ValueError, match="Shard size must be positive integer or -1"):
+            template.full_shard_shape = (64, 0)
+        with pytest.raises(ValueError, match="Shard size must be positive integer or -1"):
+            template.full_shard_shape = (64, -2)
+
     def test_all_templates_inherit_from_abstract(self) -> None:
         """Test that all concrete templates inherit from AbstractDatasetTemplate."""
         registry = TemplateRegistry()

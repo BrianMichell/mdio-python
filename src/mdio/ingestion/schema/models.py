@@ -40,7 +40,9 @@ class ResolvedSchema(BaseModel):
         name: Name of the dataset or template.
         dimensions: Specifications for the dimensions.
         coordinates: Specifications for the coordinates.
-        chunk_shape: Chunk size for each dimension.
+        chunk_shape: Chunk (read-unit) size for each dimension.
+        shard_shape: Optional shard (storage-object/write-unit) size for each dimension. Empty
+            means no sharding. When set, must be a whole multiple of ``chunk_shape`` per dimension.
         metadata: Metadata attributes.
         default_variable_name: Name of the primary data variable.
         crs: Optional coordinate reference system identifier, e.g. ``EPSG:32610``.
@@ -50,6 +52,7 @@ class ResolvedSchema(BaseModel):
     dimensions: list[DimensionSpec]
     coordinates: list[CoordinateSpec]
     chunk_shape: tuple[int, ...]
+    shard_shape: tuple[int, ...] = ()
     metadata: dict[str, Any] = Field(default_factory=dict)
     default_variable_name: str = "amplitude"
     crs: str | None = None

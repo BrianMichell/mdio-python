@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import as_completed
@@ -12,6 +13,7 @@ import numpy as np
 import zarr
 from dask.array import Array
 from dask.array import map_blocks
+from psutil import virtual_memory
 from tqdm.auto import tqdm
 from zarr import open_group as zarr_open_group
 
@@ -36,6 +38,43 @@ if TYPE_CHECKING:
     from zarr import Array as zarr_Array
 
     from mdio.segy.file import SegyFileArguments
+
+logger = logging.getLogger(__name__)
+
+_WORKER_MEMORY_MULTIPLIER = 8
+_WORKER_MEMORY_BUDGET_FRACTION = 0.25
+_MAX_WORKER_MEMORY_BUDGET_BYTES = 8 * 1024**3
+_MIN_WORKER_MEMORY_BYTES = 64 * 1024**2
+
+
+def _memory_bounded_worker_count(
+    requested_workers: int,
+    write_block: tuple[int, ...],
+    dtype: np.dtype[np.generic],
+) -> int:
+    """Bound worker processes by a conservative in-memory write-block estimate.
+
+    The estimate covers the output buffer, source samples, compression scratch space, and
+    asynchronous upload copies. Sharded blocks are larger than traditional chunk blocks, so
+    the same CPU count is not always memory-safe on smaller hosts.
+    """
+    block_bytes = int(np.prod(write_block, dtype=np.int64)) * dtype.itemsize
+    estimated_worker_bytes = max(block_bytes * _WORKER_MEMORY_MULTIPLIER, _MIN_WORKER_MEMORY_BYTES)
+    memory = virtual_memory()
+    budget = min(
+        int(memory.total * _WORKER_MEMORY_BUDGET_FRACTION),
+        int(memory.available * 0.5),
+        _MAX_WORKER_MEMORY_BUDGET_BYTES,
+    )
+    worker_count = max(1, min(requested_workers, budget // estimated_worker_bytes))
+    if worker_count < requested_workers:
+        logger.info(
+            "Reduced import workers from %s to %s to keep estimated write buffers within %s bytes.",
+            requested_workers,
+            worker_count,
+            budget,
+        )
+    return worker_count
 
 
 def _create_stats() -> SummaryStatistics:
@@ -76,10 +115,19 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
     final_stats = _create_stats()
 
-    data_variable_chunks = data.encoding.get("chunks")
-    worker_chunks = data_variable_chunks[:-1] + (data.shape[-1],)  # un-chunk sample axis
+    data_variable_chunks = tuple(int(size) for size in data.encoding["chunks"])
+
+    # Write-block granularity. With Zarr v3 sharding, a shard is a single storage object holding
+    # a grid of chunks; two workers writing different chunks of the *same* shard would perform
+    # concurrent read-modify-write on that object and clobber each other. So when the array is
+    # sharded we make the write block one whole shard (spatial), guaranteeing each worker owns a
+    # distinct set of shard objects. Unsharded arrays keep the original per-chunk write block.
+    shard_shape = data.encoding.get("shards")
+    write_block = tuple(int(size) for size in shard_shape) if shard_shape else data_variable_chunks
+
+    worker_chunks = write_block[:-1] + (data.shape[-1],)  # un-chunk sample axis
     chunk_iter = ChunkIterator(shape=data.shape, chunks=worker_chunks, dim_names=data.dims)
-    num_chunks = chunk_iter.num_chunks
+    num_blocks = int(chunk_iter.num_chunks)
 
     zarr_format = zarr.config.get("default_zarr_format")
     use_consolidated = zarr_format == ZarrFormat.V2
@@ -95,7 +143,8 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
-    num_workers = min(num_chunks, settings.import_cpus)
+    requested_workers = min(num_blocks, settings.import_cpus)
+    num_workers = _memory_bounded_worker_count(requested_workers, worker_chunks, data.dtype)
     context = mp.get_context("spawn")
 
     # Open the SEG-Y file, Zarr output handles, and transfer the compressed grid map once per worker
@@ -124,8 +173,8 @@ def to_zarr(  # noqa: PLR0913, PLR0915
 
         iterable = tqdm(
             as_completed(futures),
-            total=num_chunks,
-            unit="block",
+            total=num_blocks,
+            unit="shard" if shard_shape else "block",
             desc="Ingesting traces",
         )
 

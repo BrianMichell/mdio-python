@@ -75,6 +75,12 @@ class TestInsertTraceDimEffect:
         # Coordinates are unchanged by duplicate handling.
         assert result.coordinates[0].dimensions == ("shot_point", "cable", "channel")
 
+    def test_insert_trace_preserves_shard_rank(self) -> None:
+        """The inserted trace dimension gets a one-chunk shard extent."""
+        schema = _schema().model_copy(update={"shard_shape": (16, 2, 256, 4096)})
+        result = InsertTraceDimEffect(chunksize=1).apply(schema)
+        assert result.shard_shape == (16, 2, 256, 1, 4096)
+
 
 class TestCollapseToTraceEffect:
     """CollapseToTraceEffect collapses spatial dims into a single trace dim."""
@@ -104,3 +110,9 @@ class TestCollapseToTraceEffect:
         result = CollapseToTraceEffect(chunksize=64, collapse_dims=()).apply(_schema())
         assert [d.name for d in result.dimensions] == ["shot_point", "cable", "channel", "time"]
         assert result.chunk_shape == (8, 1, 128, 2048)
+
+    def test_collapse_preserves_shard_rank(self) -> None:
+        """Collapsed shard extents move with their dimensions; trace uses the override size."""
+        schema = _schema().model_copy(update={"shard_shape": (16, 2, 256, 4096)})
+        result = CollapseToTraceEffect(chunksize=64, collapse_dims=("channel",)).apply(schema)
+        assert result.shard_shape == (16, 2, 64, 4096)

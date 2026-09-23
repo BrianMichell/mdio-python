@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+import zarr
 from zarr.codecs import ZFPY as zarr_ZFPY  # noqa: N811
 from zarr.codecs import BloscCodec
 
@@ -35,6 +36,7 @@ from mdio.builder.xarray_builder import _get_dimension_names
 from mdio.builder.xarray_builder import _get_fill_value
 from mdio.builder.xarray_builder import _get_zarr_chunks
 from mdio.builder.xarray_builder import _get_zarr_shape
+from mdio.builder.xarray_builder import _get_zarr_shards
 from mdio.builder.xarray_builder import to_xarray_dataset
 from mdio.constants import fill_value_map
 
@@ -159,6 +161,68 @@ def test_get_zarr_chunks() -> None:
     # Test 2: Variable with no chunks defined
     v = Variable(name="seismic 3d var", data_type=ScalarType.FLOAT32, dimensions=[d1, d2, d3])
     assert _get_zarr_chunks(v, all_named_dims=[d1, d2, d3]) == (100, 200, 300)
+
+
+def test_get_zarr_shards() -> None:
+    """Shard metadata is exposed separately from the read-unit chunk grid."""
+    dims = [NamedDimension(name="inline", size=8), NamedDimension(name="crossline", size=8)]
+    chunk_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=(4, 4)))
+    shard_grid = RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=(8, 8)))
+    variable = Variable(
+        name="amplitude",
+        data_type=ScalarType.FLOAT32,
+        dimensions=dims,
+        metadata=VariableMetadata(chunk_grid=chunk_grid, shard_grid=shard_grid),
+    )
+
+    assert _get_zarr_shards(variable) == (8, 8)
+    assert _get_zarr_shards(Variable(name="plain", data_type=ScalarType.FLOAT32, dimensions=dims)) is None
+
+
+def test_to_xarray_dataset_encodes_zarr_v3_shards() -> None:
+    """A sharded variable keeps small chunks and uses shard-sized lazy write blocks."""
+    dims = [NamedDimension(name="inline", size=8), NamedDimension(name="crossline", size=8)]
+    variable = Variable(
+        name="amplitude",
+        data_type=ScalarType.FLOAT32,
+        dimensions=dims,
+        metadata=VariableMetadata(
+            chunk_grid=RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=(4, 4))),
+            shard_grid=RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=(8, 8))),
+        ),
+    )
+    dataset = Dataset(
+        variables=[variable],
+        metadata=DatasetMetadata(name="sharded", api_version="1.0.0", created_on="2023-10-01T00:00:00Z"),
+    )
+
+    with zarr.config.set({"default_zarr_format": 3}):
+        data_array = to_xarray_dataset(dataset)["amplitude"]
+
+    assert data_array.encoding["chunks"] == (4, 4)
+    assert data_array.encoding["shards"] == (8, 8)
+    assert data_array.chunks == ((8,), (8,))
+
+
+def test_to_xarray_dataset_rejects_shards_for_zarr_v2() -> None:
+    """Sharding requests fail loudly instead of being silently dropped for Zarr v2."""
+    dims = [NamedDimension(name="inline", size=8)]
+    variable = Variable(
+        name="amplitude",
+        data_type=ScalarType.FLOAT32,
+        dimensions=dims,
+        metadata=VariableMetadata(
+            chunk_grid=RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=(4,))),
+            shard_grid=RegularChunkGrid(configuration=RegularChunkShape(chunk_shape=(8,))),
+        ),
+    )
+    dataset = Dataset(
+        variables=[variable],
+        metadata=DatasetMetadata(name="sharded", api_version="1.0.0", created_on="2023-10-01T00:00:00Z"),
+    )
+
+    with zarr.config.set({"default_zarr_format": 2}), pytest.raises(ValueError, match="configured store format is v2"):
+        to_xarray_dataset(dataset)
 
 
 def test_get_fill_value() -> None:

@@ -77,7 +77,7 @@ def header_scan_worker(
 _worker_state: dict[str, object] = {}
 
 
-def trace_worker_init(  # noqa: PLR0913
+def trace_worker_init(  # noqa: PLR0913, PLR0917
     segy_file_kwargs: SegyFileArguments,
     output_path: str,
     storage_options: dict[str, object] | None,
@@ -98,9 +98,9 @@ def trace_worker_init(  # noqa: PLR0913
         data_variable_name: Name of the data variable in the dataset.
         grid_map: Compressed in-memory Zarr array mapping live traces to their positions.
     """
-    # Setting the zarr config to 1 thread to ensure we honor the `MDIO__IMPORT__CPU_COUNT` environment variable.
-    # The Zarr 3 engine utilizes multiple threads. This can lead to resource contention and unpredictable memory usage.
-    zarr_config.set({"threading.max_workers": 1})
+    # Keep Zarr thread use explicit so worker processes cannot oversubscribe the host.
+    settings = MDIOSettings()
+    zarr_config.set({"threading.max_workers": settings.import_zarr_threads})
 
     zarr_group = zarr_open_group(
         output_path,
@@ -171,12 +171,13 @@ def trace_worker(region: dict[str, slice]) -> SummaryStatistics | None:
         tmp_headers[not_null] = traces.header
         header_array[header_region_slices] = tmp_headers
 
-    # Write the data variable
+    # Write the data variable. Read samples once; the wrapper may otherwise fetch them twice.
+    samples = traces.sample
     tmp_samples = np.full(full_shape, data_array.fill_value)
-    tmp_samples[not_null] = traces.sample
+    tmp_samples[not_null] = samples
     data_array[region_slices] = tmp_samples
 
-    nonzero_samples = np.ma.masked_values(traces.sample, 0, copy=False)
+    nonzero_samples = np.ma.masked_values(samples, 0, copy=False)
 
     nonzero_count = nonzero_samples.count()
     if nonzero_count == 0:

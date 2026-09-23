@@ -34,17 +34,31 @@ class InsertTraceDimEffect(SchemaEffect):
         spatial_chunks = [
             chunk for dim, chunk in zip(schema.dimensions, schema.chunk_shape, strict=True) if dim.is_spatial
         ]
+        spatial_shards = (
+            [shard for dim, shard in zip(schema.dimensions, schema.shard_shape, strict=True) if dim.is_spatial]
+            if schema.shard_shape
+            else []
+        )
 
         trace_dim = DimensionSpec(name=_TRACE_DIM, is_spatial=True, is_calculated=True)
         new_dimensions = [*spatial_dims, trace_dim]
         new_chunk_shape = [*spatial_chunks, self.chunksize]
+        new_shard_shape = [*spatial_shards, self.chunksize] if schema.shard_shape else []
 
-        for dim, chunk in zip(schema.dimensions, schema.chunk_shape, strict=True):
+        for index, (dim, chunk) in enumerate(zip(schema.dimensions, schema.chunk_shape, strict=True)):
             if not dim.is_spatial:
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk)
+                if schema.shard_shape:
+                    new_shard_shape.append(schema.shard_shape[index])
 
-        return schema.model_copy(update={"dimensions": new_dimensions, "chunk_shape": tuple(new_chunk_shape)})
+        return schema.model_copy(
+            update={
+                "dimensions": new_dimensions,
+                "chunk_shape": tuple(new_chunk_shape),
+                "shard_shape": tuple(new_shard_shape),
+            }
+        )
 
 
 class CollapseToTraceEffect(SchemaEffect):
@@ -73,24 +87,30 @@ class CollapseToTraceEffect(SchemaEffect):
         collapse_set = set(collapse)
 
         spatial_dims = [
-            (dim, chunk)
-            for dim, chunk in zip(schema.dimensions, schema.chunk_shape, strict=True)
+            (dim, chunk, schema.shard_shape[index] if schema.shard_shape else None)
+            for index, (dim, chunk) in enumerate(zip(schema.dimensions, schema.chunk_shape, strict=True))
             if dim.is_spatial and dim.name not in collapse_set
         ]
 
         replaced_count = sum(1 for dim in schema.dimensions if dim.name in collapse_set)
 
-        new_dimensions = [dim for dim, _ in spatial_dims]
-        new_chunk_shape = [chunk for _, chunk in spatial_dims]
+        new_dimensions = [dim for dim, _, _ in spatial_dims]
+        new_chunk_shape = [chunk for _, chunk, _ in spatial_dims]
+        new_shard_shape = [shard for _, _, shard in spatial_dims if shard is not None]
 
         if replaced_count > 0:
+            trace_chunksize = self.chunksize if self.chunksize is not None else 1
             new_dimensions.append(DimensionSpec(name=_TRACE_DIM, is_spatial=True, is_calculated=True))
             new_chunk_shape.append(self.chunksize)
+            if schema.shard_shape:
+                new_shard_shape.append(trace_chunksize)
 
-        for dim, chunk in zip(schema.dimensions, schema.chunk_shape, strict=True):
+        for index, (dim, chunk) in enumerate(zip(schema.dimensions, schema.chunk_shape, strict=True)):
             if not dim.is_spatial:
                 new_dimensions.append(dim)
                 new_chunk_shape.append(chunk)
+                if schema.shard_shape:
+                    new_shard_shape.append(schema.shard_shape[index])
 
         new_coordinates = self._rewrite_coordinates(schema, collapse, collapse_set, replaced_count)
 
@@ -99,6 +119,7 @@ class CollapseToTraceEffect(SchemaEffect):
                 "dimensions": new_dimensions,
                 "coordinates": new_coordinates,
                 "chunk_shape": tuple(new_chunk_shape),
+                "shard_shape": tuple(new_shard_shape),
             }
         )
 

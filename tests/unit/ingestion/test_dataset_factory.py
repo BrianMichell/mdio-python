@@ -30,6 +30,13 @@ def _chunk_shape(variable) -> tuple[int, ...]:  # noqa: ANN001
     return tuple(variable.metadata.chunk_grid.configuration.chunk_shape)
 
 
+def _shard_shape(variable) -> tuple[int, ...]:  # noqa: ANN001
+    """Return the configured shard shape of a built Variable, or ``()`` when disabled."""
+    if variable.metadata.shard_grid is None:
+        return ()
+    return tuple(variable.metadata.shard_grid.configuration.chunk_shape)
+
+
 @pytest.fixture
 def basic_schema() -> ResolvedSchema:
     """A minimal 2-spatial-dim + vertical schema with one non-dim coordinate."""
@@ -72,6 +79,37 @@ class TestBuildMdioDataset:
         """The default variable name is written to dataset attributes."""
         dataset = build_mdio_dataset(schema=basic_schema, sizes=(2, 3, 4))
         assert dataset.metadata.attributes["defaultVariableName"] == "amplitude"
+
+    def test_resolves_shards_and_keeps_headers_unsharded(self, basic_schema: ResolvedSchema) -> None:
+        """Shard ``-1`` values resolve against sizes and apply only to the data variable."""
+        header_dtype = to_structured_type(np.dtype([("cdp_x", "int32"), ("cdp_y", "int32")]))
+        schema = basic_schema.model_copy(update={"shard_shape": (4, -1, 8)})
+
+        dataset = build_mdio_dataset(schema=schema, sizes=(4, 6, 8), header_dtype=header_dtype)
+        variables = _vars_by_name(dataset)
+
+        assert _chunk_shape(variables["amplitude"]) == (2, 6, 4)
+        assert _shard_shape(variables["amplitude"]) == (4, 6, 8)
+        assert _shard_shape(variables["headers"]) == ()
+
+    @pytest.mark.parametrize(
+        ("shard_shape", "match"),
+        [
+            ((4, 6), "rank does not match"),
+            ((3, 6, 4), "positive whole multiple"),
+            ((4, 0, 8), "positive whole multiple"),
+        ],
+    )
+    def test_rejects_invalid_shards(
+        self,
+        basic_schema: ResolvedSchema,
+        shard_shape: tuple[int, ...],
+        match: str,
+    ) -> None:
+        """Invalid shard rank, zero, and non-multiples fail before store creation."""
+        schema = basic_schema.model_copy(update={"shard_shape": shard_shape})
+        with pytest.raises(ValueError, match=match):
+            build_mdio_dataset(schema=schema, sizes=(4, 6, 8))
 
     def test_header_dtype_adds_headers_variable(self, basic_schema: ResolvedSchema) -> None:
         """Passing a header dtype adds a ``headers`` variable over the spatial dims only."""

@@ -124,6 +124,13 @@ def _get_zarr_chunks(var: Variable, all_named_dims: dict[str, NamedDimension]) -
     return _get_zarr_shape(var, all_named_dims=all_named_dims)
 
 
+def _get_zarr_shards(var: Variable) -> tuple[int, ...] | None:
+    """Get the shard (storage-object) shape for a variable, or None when it isn't sharded."""
+    if var.metadata is not None and getattr(var.metadata, "shard_grid", None) is not None:
+        return var.metadata.shard_grid.configuration.chunk_shape
+    return None
+
+
 def _compressor_to_encoding(
     compressor: mdio_Blosc | mdio_ZFP | None,
 ) -> dict[str, "zarr.codecs.Blosc | numcodecs.Blosc | numcodecs.ZFPY | zarr.codecs.ZFPY | None"] | None:
@@ -174,7 +181,7 @@ def _get_fill_value(
     return None
 
 
-def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
+def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912, PLR0915
     """Build an XArray dataset with correct dimensions and dtypes.
 
     This function constructs the underlying data structure for an XArray dataset,
@@ -189,6 +196,9 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
 
     Returns:
         The constructed dataset with proper MDIO structure and metadata.
+
+    Raises:
+        ValueError: If a variable requests Zarr v3 sharding while Zarr v2 is configured.
     """
     all_named_dims = _get_all_named_dimensions(mdio_ds)
 
@@ -199,11 +209,17 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
         shape = _get_zarr_shape(v, all_named_dims=all_named_dims)
         dtype = to_numpy_dtype(v.data_type)
         original_chunks = _get_zarr_chunks(v, all_named_dims=all_named_dims)
+        shards = _get_zarr_shards(v)
 
         # For efficient lazy array creation with Dask use larger chunks to minimize the task graph size
         # Initialize with original chunks for lazy array creation
         lazy_chunks = original_chunks
-        if shape != original_chunks:
+        if shards is not None:
+            # Sharded: the shard is the atomic write unit (one object). Dask blocks MUST align to
+            # shard boundaries or xarray's to_zarr safe-chunks guard rejects the parallel write
+            # ("would overlap multiple Dask chunks"). Making each lazy block one shard aligns them.
+            lazy_chunks = tuple(shards)
+        elif shape != original_chunks:
             # Compute automatic chunk sizes based on heuristics, respecting original chunks where possible
             auto_chunks = normalize_chunks("auto", shape=shape, dtype=dtype, previous_chunks=original_chunks)
 
@@ -221,7 +237,7 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
 
         # Add array attributes
         if v.metadata is not None:
-            metadata_dict = v.metadata.model_dump(exclude_none=True, mode="json", exclude={"chunk_grid"})
+            metadata_dict = v.metadata.model_dump(exclude_none=True, mode="json", exclude={"chunk_grid", "shard_grid"})
             data_array.attrs.update(metadata_dict)
         if v.long_name:
             data_array.attrs["long_name"] = v.long_name
@@ -234,6 +250,13 @@ def to_xarray_dataset(mdio_ds: Dataset) -> xr_Dataset:  # noqa: PLR0912
             "chunks": original_chunks,
             fill_value_key: fill_value,
         }
+
+        # Zarr v3 sharding: the shard is the storage object; chunks are the read unit within it.
+        if shards is not None:
+            if zarr_format == ZarrFormat.V2:
+                msg = f"Variable {v.name!r} requests Zarr v3 sharding, but the configured store format is v2."
+                raise ValueError(msg)
+            encoding["shards"] = shards
 
         compressor_encodings = _compressor_to_encoding(v.compressor)
 

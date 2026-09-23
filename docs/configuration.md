@@ -15,6 +15,7 @@ You can find a summary of the available variables and their defaults below.
 | **Variable**                          | **Type** | **Default**                      |
 | ------------------------------------- | -------- | -------------------------------- |
 | `MDIO__IMPORT__CPU_COUNT`             | `int`    | Number of logical CPUs available |
+| `MDIO__IMPORT__ZARR_THREADS`          | `int`    | `1`                              |
 | `MDIO__EXPORT__CPU_COUNT`             | `int`    | Number of logical CPUs available |
 | `MDIO__GRID__SPARSITY_RATIO_WARN`     | `float`  | `2.0`                            |
 | `MDIO__GRID__SPARSITY_RATIO_LIMIT`    | `float`  | `10.0`                           |
@@ -42,6 +43,17 @@ significantly speed up ingestion of large datasets.
 
 ```shell
 $ export MDIO__IMPORT__CPU_COUNT=16
+$ mdio segy import input.segy output.mdio --header-locations 189,193
+```
+
+### `MDIO__IMPORT__ZARR_THREADS`
+
+Controls Zarr thread-pool size inside each import worker. Keep the product of import worker
+processes and Zarr threads near the available CPU count to avoid oversubscription.
+
+```shell
+$ export MDIO__IMPORT__CPU_COUNT=8
+$ export MDIO__IMPORT__ZARR_THREADS=2
 $ mdio segy import input.segy output.mdio --header-locations 189,193
 ```
 

@@ -37,6 +37,16 @@ class TestSchemaResolverNoOverrides:
         assert schema.dimensions[-1].is_calculated is False
         # Default chunk shape comes straight from the template.
         assert schema.chunk_shape == template.full_chunk_shape
+        assert schema.shard_shape == ()
+
+    def test_template_shard_shape_copied_onto_schema(self) -> None:
+        """A configured template shard shape is carried through schema resolution."""
+        template = Seismic3DStreamerShotGathersTemplate(data_domain="time")
+        template.full_shard_shape = (16, 2, 256, 4096)
+
+        schema = SchemaResolver().resolve(template)
+
+        assert schema.shard_shape == (16, 2, 256, 4096)
 
     def test_obn_template_marks_shot_index_as_calculated(self) -> None:
         """The OBN template's ``shot_index`` resolves as a calculated spatial dimension."""
