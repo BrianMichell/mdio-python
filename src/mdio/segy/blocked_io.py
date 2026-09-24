@@ -51,15 +51,24 @@ def _memory_bounded_worker_count(
     requested_workers: int,
     write_block: tuple[int, ...],
     dtype: np.dtype[np.generic],
+    multiplier: int = _WORKER_MEMORY_MULTIPLIER,
 ) -> int:
     """Bound worker processes by a conservative in-memory write-block estimate.
 
     The estimate covers the output buffer, source samples, compression scratch space, and
-    asynchronous upload copies. Sharded blocks are larger than traditional chunk blocks, so
-    the same CPU count is not always memory-safe on smaller hosts.
+    asynchronous upload copies.
+
+    Args:
+        requested_workers: Worker count requested by the CPU setting and block count.
+        write_block: Uncompressed region shape used to estimate resident memory.
+        dtype: Sample dtype of that region.
+        multiplier: How many copies of the region to budget per worker.
+
+    Returns:
+        Worker count that fits in the memory budget, at least one.
     """
     block_bytes = int(np.prod(write_block, dtype=np.int64)) * dtype.itemsize
-    estimated_worker_bytes = max(block_bytes * _WORKER_MEMORY_MULTIPLIER, _MIN_WORKER_MEMORY_BYTES)
+    estimated_worker_bytes = max(block_bytes * multiplier, _MIN_WORKER_MEMORY_BYTES)
     memory = virtual_memory()
     budget = min(
         int(memory.total * _WORKER_MEMORY_BUDGET_FRACTION),
@@ -116,15 +125,9 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     final_stats = _create_stats()
 
     data_variable_chunks = tuple(int(size) for size in data.encoding["chunks"])
-
-    # Write-block granularity. With Zarr v3 sharding, a shard is a single storage object holding
-    # a grid of chunks; two workers writing different chunks of the *same* shard would perform
-    # concurrent read-modify-write on that object and clobber each other. So when the array is
-    # sharded we make the write block one whole shard (spatial), guaranteeing each worker owns a
-    # distinct set of shard objects. Unsharded arrays keep the original per-chunk write block.
+    # One worker owns a whole spatial shard so no two processes write the same shard object.
     shard_shape = data.encoding.get("shards")
     write_block = tuple(int(size) for size in shard_shape) if shard_shape else data_variable_chunks
-
     worker_chunks = write_block[:-1] + (data.shape[-1],)  # un-chunk sample axis
     chunk_iter = ChunkIterator(shape=data.shape, chunks=worker_chunks, dim_names=data.dims)
     num_blocks = int(chunk_iter.num_chunks)
@@ -144,7 +147,18 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
     requested_workers = min(num_blocks, settings.import_cpus)
-    num_workers = _memory_bounded_worker_count(requested_workers, worker_chunks, data.dtype)
+    # A sharded region already is the full trace column, so budget 2 copies instead of 8.
+    memory_multiplier = 2 if shard_shape else _WORKER_MEMORY_MULTIPLIER
+    num_workers = _memory_bounded_worker_count(
+        requested_workers, worker_chunks, data.dtype, multiplier=memory_multiplier
+    )
+    logger.info("Import workers: requested=%s using=%s", requested_workers, num_workers)
+    print(
+        f"IMPORT_WORKERS requested={requested_workers} using={num_workers} multiplier={memory_multiplier}",
+        flush=True,
+    )
+    # Sharded writes one shard depth per assignment; traditional writes the whole sample axis.
+    sample_slab = write_block[-1] if shard_shape else int(data.shape[-1])
     context = mp.get_context("spawn")
 
     # Open the SEG-Y file, Zarr output handles, and transfer the compressed grid map once per worker
@@ -161,6 +175,7 @@ def to_zarr(  # noqa: PLR0913, PLR0915
             use_consolidated,
             data_variable_name,
             grid_map,
+            sample_slab,
         ),
     )
 

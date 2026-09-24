@@ -8,6 +8,7 @@ expected full or partial files.
 from __future__ import annotations
 
 import copy
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ import numpy as np
 import pytest
 import zarr
 from numpy.testing import assert_array_equal
+from segy import SegyFile
 from segy.factory import SegyFactory
 from segy.schema import HeaderField
 from segy.schema import HeaderSpec
@@ -254,8 +256,7 @@ def mock_nd_segy(path: str, grid_conf: GridConfig, segy_factory_conf: SegyFactor
     return spec
 
 
-def test_sharded_ingestion_matches_traditional_with_remainders(tmp_path: Path) -> None:
-    """Sharded and traditional ingestion produce equal data across partial edge shards."""
+def _sharded_remainder_segy(tmp_path: Path) -> tuple[Path, SegySpec]:
     grid_conf = GridConfig(
         name="3d_stack",
         dims=[Dimension("inline", 10, 9, 1), Dimension("crossline", 100, 9, 2)],
@@ -266,8 +267,23 @@ def test_sharded_ingestion_matches_traditional_with_remainders(tmp_path: Path) -
         num_samples=12,
     )
     segy_path = tmp_path / "sharded_remainder.sgy"
-    segy_spec = mock_nd_segy(segy_path, grid_conf, segy_factory_conf)
+    return segy_path, mock_nd_segy(segy_path, grid_conf, segy_factory_conf)
 
+
+def _drop_traces(segy_path: Path, segy_spec: SegySpec, out_path: Path) -> Path:
+    """Copy a SEG-Y file keeping a seeded subset of traces, so the grid has dead traces."""
+    trace_spec = SegyFile(segy_path, spec=segy_spec).spec.trace
+    offset, itemsize = int(trace_spec.offset), trace_spec.dtype.itemsize
+    raw = segy_path.read_bytes()
+    num_traces = (len(raw) - offset) // itemsize
+    keep = np.random.default_rng(seed=7).random(num_traces) > 0.3
+    keep[[0, -1]] = True
+    traces = np.frombuffer(raw, dtype=np.uint8, offset=offset).reshape(num_traces, itemsize)
+    out_path.write_bytes(raw[:offset] + traces[keep].tobytes())
+    return out_path
+
+
+def _assert_sharded_matches_traditional(tmp_path: Path, segy_path: Path, segy_spec: SegySpec) -> None:
     traditional_template = copy.deepcopy(TemplateRegistry().get("PostStack3DTime"))
     traditional_template.full_chunk_shape = (4, 4, 4)
     sharded_template = copy.deepcopy(TemplateRegistry().get("PostStack3DTime"))
@@ -296,6 +312,24 @@ def test_sharded_ingestion_matches_traditional_with_remainders(tmp_path: Path) -
     assert_array_equal(sharded_ds["amplitude"].values, traditional_ds["amplitude"].values)
     assert_array_equal(sharded_ds["trace_mask"].values, traditional_ds["trace_mask"].values)
     assert_array_equal(sharded_ds["headers"].values, traditional_ds["headers"].values)
+    sharded_stats = json.loads(sharded_amplitude.attrs["statsV1"])
+    traditional_stats = json.loads(traditional_amplitude.attrs["statsV1"])
+    assert sharded_stats["count"] == traditional_stats["count"]
+    for key in ("min", "max", "sum", "sumSquares"):
+        np.testing.assert_allclose(sharded_stats[key], traditional_stats[key], rtol=1e-12)
+
+
+def test_sharded_ingestion_matches_traditional_with_remainders(tmp_path: Path) -> None:
+    """Sharded and traditional ingestion produce equal data across partial edge shards."""
+    segy_path, segy_spec = _sharded_remainder_segy(tmp_path)
+    _assert_sharded_matches_traditional(tmp_path, segy_path, segy_spec)
+
+
+def test_sharded_ingestion_matches_traditional_with_dead_traces(tmp_path: Path) -> None:
+    """Shard columns with dead traces keep fill values, headers, and stats equal to traditional."""
+    segy_path, segy_spec = _sharded_remainder_segy(tmp_path)
+    sparse_path = _drop_traces(segy_path, segy_spec, tmp_path / "sparse.sgy")
+    _assert_sharded_matches_traditional(tmp_path, sparse_path, segy_spec)
 
 
 def generate_selection_mask(selection_conf: SelectionMaskConfig, grid_conf: GridConfig) -> NDArray:

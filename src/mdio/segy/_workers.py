@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -25,6 +28,12 @@ from mdio.builder.schemas.v1.stats import SummaryStatistics
 from mdio.constants import fill_value_map
 
 logger = logging.getLogger(__name__)
+
+# `np.ma.masked_values(samples, 0)` is `isclose` with atol 1e-8, so |x| <= 1e-8 is excluded.
+_MASKED_ZERO_ATOL = 1e-8
+# Stats walk the sample axis in shard-depth slabs. A full-column masked array plus `np.ma.power`
+# keeps another copy of the column resident in every worker.
+_STATS_SLAB_SAMPLES = 256
 
 
 def header_scan_worker(
@@ -84,6 +93,7 @@ def trace_worker_init(  # noqa: PLR0913, PLR0917
     use_consolidated: bool,
     data_variable_name: str,
     grid_map: zarr_Array,
+    sample_slab: int,
 ) -> None:
     """Initialize per-process state for trace ingestion workers.
 
@@ -97,6 +107,8 @@ def trace_worker_init(  # noqa: PLR0913, PLR0917
         use_consolidated: Whether to open the group with consolidated metadata (Zarr V2).
         data_variable_name: Name of the data variable in the dataset.
         grid_map: Compressed in-memory Zarr array mapping live traces to their positions.
+        sample_slab: Sample-axis length of one storage write. Sharded ingestion uses the shard
+            depth so each write is one complete shard object.
     """
     # Keep Zarr thread use explicit so worker processes cannot oversubscribe the host.
     settings = MDIOSettings()
@@ -114,6 +126,103 @@ def trace_worker_init(  # noqa: PLR0913, PLR0917
     _worker_state["header_array"] = zarr_group.get("headers")
     _worker_state["raw_header_array"] = zarr_group.get("raw_headers")
     _worker_state["grid_map"] = grid_map
+    _worker_state["sample_slab"] = sample_slab
+
+
+def summarize_samples(samples: np.ndarray, slab: int = _STATS_SLAB_SAMPLES) -> SummaryStatistics | None:
+    """Summarize samples, excluding values with absolute value <= 1e-8.
+
+    Partial sums are accumulated per slab in float64. The same function serves sharded and
+    traditional ingestion, and neither path builds a masked array of the whole column.
+
+    Args:
+        samples: Decoded samples shaped ``(n_traces, n_samples)``.
+        slab: Sample-axis length of one statistics pass. Values below 1 use the whole axis.
+
+    Returns:
+        Summary statistics, or None when every value is within 1e-8 of zero.
+    """
+    count = 0
+    total = 0.0
+    sum_squares = 0.0
+    min_value: float | None = None
+    max_value: float | None = None
+    n_samples = int(samples.shape[-1])
+    step = n_samples if slab < 1 else slab
+    for offset in range(0, n_samples, step):
+        values = samples[..., offset : offset + step]
+        kept = values[np.abs(values) > _MASKED_ZERO_ATOL]
+        if kept.size == 0:
+            continue
+        kept64 = kept.astype(np.float64, copy=False)
+        count += int(kept.size)
+        total += float(kept.sum(dtype=np.float64))
+        sum_squares += float(np.dot(kept64, kept64))
+        slab_min = float(kept.min())
+        slab_max = float(kept.max())
+        min_value = slab_min if min_value is None else min(min_value, slab_min)
+        max_value = slab_max if max_value is None else max(max_value, slab_max)
+    if count == 0 or min_value is None or max_value is None:
+        return None
+    histogram = CenteredBinHistogram(bin_centers=[], counts=[])
+    return SummaryStatistics(
+        count=count,
+        min=min_value,
+        max=max_value,
+        sum=total,
+        sum_squares=sum_squares,
+        histogram=histogram,
+    )
+
+
+def _write_sample_slabs(  # noqa: PLR0913
+    data_array: zarr_Array,
+    region_slices: tuple[slice, ...],
+    spatial_shape: tuple[int, ...],
+    not_null: np.ndarray,
+    samples: np.ndarray,
+    sample_slab: int,
+) -> None:
+    """Write samples in storage-sized slabs along the last axis.
+
+    A slab equal to the shard depth makes each assignment one complete shard object. The full
+    column is never materialized as a second array.
+
+    Args:
+        data_array: Destination Zarr array.
+        region_slices: Region slices, including the sample axis.
+        spatial_shape: Spatial shape of the region, without samples.
+        not_null: Mask of live traces inside the spatial region.
+        samples: Decoded samples for the live traces, shaped ``(n_live, n_samples)``.
+        sample_slab: Number of samples per write. Values below 1 write the whole axis.
+    """
+    sample_slice = region_slices[-1]
+    spatial_slices = region_slices[:-1]
+    sample_count = sample_slice.stop - sample_slice.start
+    slab = sample_count if sample_slab < 1 else sample_slab
+    spans: list[tuple[int, int, int]] = []
+    offset = 0
+    for start in range(sample_slice.start, sample_slice.stop, slab):
+        stop = min(start + slab, sample_slice.stop)
+        spans.append((start, stop, offset))
+        offset += stop - start
+
+    def write_span(span: tuple[int, int, int]) -> None:
+        """Write one sample slab. Separate time slabs are separate shard objects."""
+        start, stop, sample_offset = span
+        width = stop - start
+        tmp_samples = np.full((*spatial_shape, width), data_array.fill_value)
+        tmp_samples[not_null] = samples[..., sample_offset : sample_offset + width]
+        data_array[(*spatial_slices, slice(start, stop))] = tmp_samples
+
+    # The sync shard codec compresses inner chunks on one thread. Overlapping two
+    # time-slab writes uses a second core without a second copy of the trace column.
+    if len(spans) <= 1:
+        for span in spans:
+            write_span(span)
+        return
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(write_span, spans))
 
 
 def trace_worker(region: dict[str, slice]) -> SummaryStatistics | None:
@@ -149,12 +258,20 @@ def trace_worker(region: dict[str, slice]) -> SummaryStatistics | None:
     # For that reason, we have wrapped the accessors to provide an interface that can be removed
     # and not require additional changes to the below code.
     # NOTE: The `raw_header_key` code block should be removed in full as it will become dead code.
-    traces = SegyFileRawTraceWrapper(segy_file, live_trace_indexes)
+    timing = os.environ.get("MDIO__IMPORT__SHARD_TIMING") == "1"
+    started = time.perf_counter()
+    traces = SegyFileRawTraceWrapper(
+        segy_file,
+        live_trace_indexes,
+        keep_raw=raw_header_array is not None,
+    )
+    fetched = time.perf_counter()
+    if timing and not _worker_state.get("logged_writeable"):
+        print(f"FETCH_WRITEABLE writeable={traces.fetched_writeable}", flush=True)
+        _worker_state["logged_writeable"] = True
 
     # Compute slices once (headers exclude sample dimension)
     header_region_slices = region_slices[:-1]  # Exclude sample dimension
-
-    full_shape = tuple(s.stop - s.start for s in region_slices)
     header_shape = tuple(s.stop - s.start for s in header_region_slices)
 
     # Write raw headers if array was provided
@@ -172,24 +289,25 @@ def trace_worker(region: dict[str, slice]) -> SummaryStatistics | None:
         header_array[header_region_slices] = tmp_headers
 
     # Write the data variable. Read samples once; the wrapper may otherwise fetch them twice.
+    # Assign one storage slab at a time so a shard writer does not also retain a full-column copy.
     samples = traces.sample
-    tmp_samples = np.full(full_shape, data_array.fill_value)
-    tmp_samples[not_null] = samples
-    data_array[region_slices] = tmp_samples
-
-    nonzero_samples = np.ma.masked_values(samples, 0, copy=False)
-
-    nonzero_count = nonzero_samples.count()
-    if nonzero_count == 0:
-        # Return None to avoid calculating a NaN in sum_squares
-        return None
-
-    histogram = CenteredBinHistogram(bin_centers=[], counts=[])
-    return SummaryStatistics(
-        count=nonzero_count,
-        min=nonzero_samples.min(),
-        max=nonzero_samples.max(),
-        sum=nonzero_samples.sum(dtype="float64"),
-        sum_squares=(np.ma.power(nonzero_samples, 2).sum(dtype="float64")),
-        histogram=histogram,
+    decoded = time.perf_counter()
+    _write_sample_slabs(
+        data_array=data_array,
+        region_slices=region_slices,
+        spatial_shape=header_shape,
+        not_null=not_null,
+        samples=samples,
+        sample_slab=int(_worker_state["sample_slab"]),
     )
+    written = time.perf_counter()
+
+    stats = summarize_samples(samples)
+    if timing:
+        finished = time.perf_counter()
+        print(
+            f"SHARD_TIME fetch={fetched - started:.2f} header_decode={decoded - fetched:.2f} "
+            f"write={written - decoded:.2f} stats={finished - written:.2f}",
+            flush=True,
+        )
+    return stats
