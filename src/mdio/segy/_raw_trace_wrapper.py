@@ -12,56 +12,23 @@ if TYPE_CHECKING:
 
 
 class SegyFileRawTraceWrapper:
-    """Fetched SEG-Y traces that can serve raw headers and decoded samples.
-
-    Args:
-        segy_file: Open SEG-Y file.
-        indices: Trace indices to fetch.
-        keep_raw: When True, decode a copy so fetched bytes stay intact for raw headers.
-            When False, decode the fetched buffer itself so only one column stays resident.
-    """
-
-    def __init__(
-        self,
-        segy_file: SegyFile,
-        indices: int | list[int] | NDArray | slice,
-        keep_raw: bool = True,
-    ) -> None:
+    def __init__(self, segy_file: SegyFile, indices: int | list[int] | NDArray | slice):
         self.segy_file = segy_file
         self.indices = indices
-        self.keep_raw = keep_raw
 
         self.idx = self.segy_file.trace.normalize_and_validate_query(self.indices)
         self.trace_buffer_array = self.segy_file.trace.fetch(self.idx, raw=True)
 
         self.trace_view = self.trace_buffer_array.view(self.segy_file.spec.trace.dtype)
-        # Recorded before any rewrite. `np.frombuffer` fetches are not writeable.
-        self.fetched_writeable = bool(self.trace_view.flags.writeable)
 
         self.trace_decode_pipeline = self.segy_file.accessors.trace_decode_pipeline
         self.decoded_traces = None  # decode later when not-raw header/sample is called
-
-    def _decode_source(self) -> NDArray:
-        """Return the buffer the decode pipeline should consume.
-
-        Raw-header reads need the fetched bytes unchanged, so that path copies. Otherwise the
-        pipeline mutates one column. A read-only fetch is made writeable once and the original
-        buffer is dropped before decode continues.
-        """
-        if self.keep_raw:
-            return self.trace_view.copy()
-        if self.trace_view.flags.writeable:
-            return self.trace_view
-        owned = np.array(self.trace_view, copy=True)
-        self.trace_view = owned
-        self.trace_buffer_array = None
-        return owned
 
     def _ensure_decoded(self) -> None:
         """Apply trace decoding pipeline if not already done."""
         if self.decoded_traces is not None:  # already done
             return
-        self.decoded_traces = self.trace_decode_pipeline.apply(self._decode_source())
+        self.decoded_traces = self.trace_decode_pipeline.apply(self.trace_view.copy())
 
     @property
     def raw_header(self) -> NDArray:

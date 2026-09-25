@@ -23,6 +23,8 @@ from mdio.builder.schemas.v1.stats import SummaryStatistics
 from mdio.constants import ZarrFormat
 from mdio.core.config import MDIOSettings
 from mdio.core.indexing import ChunkIterator
+from mdio.segy._shard_writer import UPLOAD_BLOCK_BYTES
+from mdio.segy._workers import SHARD_WRITE_THREADS
 from mdio.segy._workers import trace_worker
 from mdio.segy._workers import trace_worker_init
 from mdio.segy.creation import SegyPartRecord
@@ -41,44 +43,72 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_WORKER_MEMORY_MULTIPLIER = 8
-_WORKER_MEMORY_BUDGET_FRACTION = 0.25
-_MAX_WORKER_MEMORY_BUDGET_BYTES = 8 * 1024**3
-_MIN_WORKER_MEMORY_BYTES = 64 * 1024**2
+# Interpreter, libraries, and open handles of one spawned worker.
+_WORKER_BASE_BYTES = 512 * 1024**2
+_TRACE_HEADER_BYTES = 240
+_WORKER_MEMORY_TOTAL_FRACTION = 0.75
+_WORKER_MEMORY_AVAILABLE_FRACTION = 0.9
 
 
-def _memory_bounded_worker_count(
-    requested_workers: int,
-    write_block: tuple[int, ...],
+def _estimate_worker_bytes(
+    worker_block: tuple[int, ...],
     dtype: np.dtype[np.generic],
-    multiplier: int = _WORKER_MEMORY_MULTIPLIER,
+    inner_chunks: tuple[int, ...] | None = None,
+    shards: tuple[int, ...] | None = None,
 ) -> int:
-    """Bound worker processes by a conservative in-memory write-block estimate.
+    """Estimate resident bytes of one trace worker.
 
-    The estimate covers the output buffer, source samples, compression scratch space, and
-    asynchronous upload copies.
+    A traditional worker holds its trace column once (`fetch_traces` decodes in place), plus a
+    fill buffer and its encoded copy. A sharded worker streams one inner-chunk column at a time,
+    so it holds that column, the header column of its shard, one inner chunk and its encoded copy
+    per write thread, and one upload buffer per time shard.
+
+    Args:
+        worker_block: Region one worker owns: spatial extent plus the full sample axis.
+        dtype: Sample dtype of the output array.
+        inner_chunks: Inner chunk shape of a sharded array.
+        shards: Shard shape of a sharded array.
+
+    Returns:
+        Estimated peak resident bytes of one worker.
+    """
+    n_samples = int(worker_block[-1])
+    trace_bytes = n_samples * dtype.itemsize + _TRACE_HEADER_BYTES
+    region_traces = int(np.prod(worker_block[:-1], dtype=np.int64))
+    if inner_chunks is None or shards is None:
+        return _WORKER_BASE_BYTES + region_traces * trace_bytes + 2 * region_traces * n_samples * dtype.itemsize
+
+    column_traces = int(np.prod(inner_chunks[:-1], dtype=np.int64))
+    chunk_bytes = int(np.prod(inner_chunks, dtype=np.int64)) * dtype.itemsize
+    time_shards = -(-n_samples // shards[-1])
+    return (
+        _WORKER_BASE_BYTES
+        + column_traces * trace_bytes
+        + 2 * region_traces * _TRACE_HEADER_BYTES
+        + SHARD_WRITE_THREADS * 2 * chunk_bytes
+        + time_shards * 2 * UPLOAD_BLOCK_BYTES
+    )
+
+
+def _memory_bounded_worker_count(requested_workers: int, worker_bytes: int) -> int:
+    """Bound worker processes so their estimated resident memory fits on the host.
 
     Args:
         requested_workers: Worker count requested by the CPU setting and block count.
-        write_block: Uncompressed region shape used to estimate resident memory.
-        dtype: Sample dtype of that region.
-        multiplier: How many copies of the region to budget per worker.
+        worker_bytes: Estimated peak resident bytes of one worker.
 
     Returns:
         Worker count that fits in the memory budget, at least one.
     """
-    block_bytes = int(np.prod(write_block, dtype=np.int64)) * dtype.itemsize
-    estimated_worker_bytes = max(block_bytes * multiplier, _MIN_WORKER_MEMORY_BYTES)
     memory = virtual_memory()
     budget = min(
-        int(memory.total * _WORKER_MEMORY_BUDGET_FRACTION),
-        int(memory.available * 0.5),
-        _MAX_WORKER_MEMORY_BUDGET_BYTES,
+        int(memory.total * _WORKER_MEMORY_TOTAL_FRACTION),
+        int(memory.available * _WORKER_MEMORY_AVAILABLE_FRACTION),
     )
-    worker_count = max(1, min(requested_workers, budget // estimated_worker_bytes))
+    worker_count = max(1, min(requested_workers, budget // worker_bytes))
     if worker_count < requested_workers:
         logger.info(
-            "Reduced import workers from %s to %s to keep estimated write buffers within %s bytes.",
+            "Reduced import workers from %s to %s to keep estimated worker memory within %s bytes.",
             requested_workers,
             worker_count,
             budget,
@@ -147,18 +177,18 @@ def to_zarr(  # noqa: PLR0913, PLR0915
     # For Unix async writes with s3fs/fsspec & multiprocessing, use 'spawn' instead of default
     # 'fork' to avoid deadlocks on cloud stores. Slower but necessary. Default on Windows.
     requested_workers = min(num_blocks, settings.import_cpus)
-    # A sharded region already is the full trace column, so budget 2 copies instead of 8.
-    memory_multiplier = 2 if shard_shape else _WORKER_MEMORY_MULTIPLIER
-    num_workers = _memory_bounded_worker_count(
-        requested_workers, worker_chunks, data.dtype, multiplier=memory_multiplier
+    worker_bytes = _estimate_worker_bytes(
+        worker_chunks,
+        data.dtype,
+        inner_chunks=data_variable_chunks if shard_shape else None,
+        shards=write_block if shard_shape else None,
     )
+    num_workers = _memory_bounded_worker_count(requested_workers, worker_bytes)
     logger.info("Import workers: requested=%s using=%s", requested_workers, num_workers)
     print(
-        f"IMPORT_WORKERS requested={requested_workers} using={num_workers} multiplier={memory_multiplier}",
+        f"IMPORT_WORKERS requested={requested_workers} using={num_workers} worker_bytes={worker_bytes}",
         flush=True,
     )
-    # Sharded writes one shard depth per assignment; traditional writes the whole sample axis.
-    sample_slab = write_block[-1] if shard_shape else int(data.shape[-1])
     context = mp.get_context("spawn")
 
     # Open the SEG-Y file, Zarr output handles, and transfer the compressed grid map once per worker
@@ -175,7 +205,6 @@ def to_zarr(  # noqa: PLR0913, PLR0915
             use_consolidated,
             data_variable_name,
             grid_map,
-            sample_slab,
         ),
     )
 
