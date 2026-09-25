@@ -154,10 +154,10 @@ def summarize_samples(samples: np.ndarray, slab: int = _STATS_SLAB_SAMPLES) -> S
         kept = values[np.abs(values) > _MASKED_ZERO_ATOL]
         if kept.size == 0:
             continue
-        kept64 = kept.astype(np.float64, copy=False)
         count += int(kept.size)
         total += float(kept.sum(dtype=np.float64))
-        sum_squares += float(np.dot(kept64, kept64))
+        # Not `np.dot`: BLAS ddot wakes a per-process OpenBLAS pool that spin-waits after each call.
+        sum_squares += float(np.square(kept, dtype=np.float64).sum())
         slab_min = float(kept.min())
         slab_max = float(kept.max())
         min_value = slab_min if min_value is None else min(min_value, slab_min)
